@@ -447,10 +447,32 @@ public:
   }
 
   void updateParticleColors() {
+    float h1 = fInvSpacing;
+
     for (int i = 0; i < numParticles; i++) {
-      particleColor[3 * i] *= 0.99f;
-      particleColor[3 * i + 1] *= 0.99f;
-      particleColor[3 * i + 2] = std::clamp(particleColor[3 * i + 2] + 0.001f, 0.0f, 1.0f);
+      float s = 0.01;
+
+      particleColor[3 * i] = std::clamp<float>(particleColor[3 * i] - s, 0.0, 1.0f);
+      particleColor[3 * i + 1] = std::clamp<float>(particleColor[3 * i + 1] - s, 0.0, 1.0f);
+      particleColor[3 * i + 1] = std::clamp<float>(particleColor[3 * i + 2] + s, 0.0, 1.0f);
+
+      float x = particlePos[2 * i];
+      float y = particlePos[2 * i + 1];
+      int xi = std::clamp<int>(floor(x * h1), 1, fNumX - 1);
+      int yi = std::clamp<int>(floor(y * h1), 1, fNumY - 1);
+      int cellNr = xi * fNumY + yi;
+
+      float d0 = particleRestDensity;
+
+      if (d0 > 0.0) {
+        float relDensity = particleDensity[cellNr] / d0;
+        if (relDensity < 0.7) {
+          float s = 0.8;
+          particleColor[3 * i] = s;
+          particleColor[3 * i + 1] = s;
+          particleColor[3 * i + 2] = 1.0f;
+        }
+      }
     }
   }
 
@@ -461,7 +483,7 @@ public:
     float m = 0.25f;
     int num = std::floor(val / m);
     float s = (val - num * m) / m;
-    float r, g, b;
+    float r = 0.0f, g = 0.0f, b = 0.0f;
 
     switch (num) {
     case 0:

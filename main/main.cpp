@@ -6,6 +6,7 @@
 #include "logger.hpp"
 #include "madgwick_filter.hpp"
 #include "timer.hpp"
+#include "vector2d.hpp"
 
 #include "fluidsim.hpp"
 
@@ -19,6 +20,10 @@ extern "C" void app_main(void) {
   espp::EspBox &box = espp::EspBox::get();
   box.set_log_level(espp::Logger::Verbosity::INFO);
   logger.info("Running on {}", box.box_type());
+
+  // mutex for the touch position
+  std::mutex touch_mutex;
+  espp::Vector2f touch_pos{};
 
   auto touch_callback = [&](const auto &touch) {
     // NOTE: since we're directly using the touchpad data, and not using the
@@ -37,6 +42,10 @@ extern "C" void app_main(void) {
       // if there is a touch point, use it to interact with the fluid sim
       if (touchpad_data.num_touch_points > 0) {
         // TODO: interact with the fluid sim
+        {
+          std::lock_guard<std::mutex> lock(touch_mutex);
+          touch_pos = espp::Vector2f(touchpad_data.x, touchpad_data.y);
+        }
       }
     }
   };
@@ -83,10 +92,14 @@ extern "C" void app_main(void) {
   // set the display brightness to be 75%
   box.brightness(75.0f);
 
+  // gravity vector to be used with the fluid sim
+  std::mutex gravity_mutex;
+  std::array<float, 3> gravity = {0, 0, 0};
+
   // make a task to read out the IMU data and print it to console
   using namespace std::chrono_literals;
   espp::Timer imu_timer({.period = 10ms,
-                         .callback = []() -> bool {
+                         .callback = [&gravity, &gravity_mutex]() -> bool {
                            static auto &box = espp::EspBox::get();
                            static auto imu = box.imu();
 
@@ -115,22 +128,117 @@ extern "C" void app_main(void) {
                            pitch *= M_PI / 180.0f;
                            roll *= M_PI / 180.0f;
 
-                           // compute the gravity vector
-                           float vx = sin(pitch);
-                           float vy = -cos(pitch) * sin(roll);
-                           float vz = -cos(pitch) * cos(roll);
-
-                           // TODO: provide the updated gravity vector to the fluid sim
+                           // compute the gravity vector and store it
+                           {
+                             std::lock_guard<std::mutex> lock(gravity_mutex);
+                             gravity[0] = sin(pitch);
+                             gravity[1] = -cos(pitch) * sin(roll);
+                             gravity[2] = -cos(pitch) * cos(roll);
+                           }
 
                            return false;
                          },
+                         .auto_start = true,
                          .task_config = {
                              .name = "IMU",
                              .stack_size_bytes = 6 * 1024,
                              .priority = 10,
                              .core_id = 0,
                          }});
-  imu_timer.start();
+
+  // now make the fluid sim
+  static constexpr float density = 1000.0f;
+  static constexpr int width = box.lcd_width();
+  static constexpr int height = box.lcd_height();
+  static constexpr int resolution = 10;
+  static constexpr float spacing = height / resolution;
+  static constexpr float particle_radius = spacing * 0.3;
+  float dx = 2.0 * particle_radius;
+  float dy = sqrt(3.0) / 2.0 * dx;
+  float relWaterWidth = 0.8;
+  float relWaterHeight = 0.8;
+  int numX = floor((relWaterWidth * width - 2.0 * spacing - 2.0 * particle_radius) / dx);
+  int numY = floor((relWaterHeight * height - 2.0 * spacing - 2.0 * particle_radius) / dy);
+  int max_particles = numX * numY;
+
+  // static constexpr int numX = width / spacing;
+  // static constexpr int max_particles = 100;
+
+  std::shared_ptr<fluid::FlipFluid> fluid = std::make_shared<fluid::FlipFluid>(
+      density, width, height, spacing, particle_radius, max_particles);
+
+  // create particles
+  fluid->numParticles = numX * numY;
+  int p = 0;
+  for (int i = 0; i < numX; i++) {
+    for (int j = 0; j < numY; j++) {
+      fluid->particlePos[p++] =
+          spacing + particle_radius + dx * i + (j % 2 == 0 ? 0.0 : particle_radius);
+      fluid->particlePos[p++] = spacing + particle_radius + dy * j;
+    }
+  }
+
+  // setup grid cells for tank
+  int n = fluid->fNumY;
+  for (int i = 0; i < fluid->fNumX; i++) {
+    for (int j = 0; j < fluid->fNumY; j++) {
+      int s = 1.0; // fluid
+      if (i == 0 || i == fluid->fNumX - 1 || j == 0 || j == fluid->fNumY - 1)
+        s = 0.0; // solid
+      fluid->s[i * n + j] = s;
+    }
+  }
+
+  // now make a task to update the fluid sim
+  espp::Task fluid_task(
+      {.callback = [&touch_pos, &touch_mutex, &gravity, &gravity_mutex, &fluid]() -> bool {
+         // get the gravity vector
+         std::array<float, 3> gravity_vector{};
+         {
+           std::lock_guard<std::mutex> lock(gravity_mutex);
+           gravity_vector = gravity;
+         }
+
+         // get the obstacle position (where the user is touching)
+         espp::Vector2f obstacle_pos{};
+         {
+           std::lock_guard<std::mutex> lock(touch_mutex);
+           // get obstacle position
+           obstacle_pos = touch_pos;
+           // TODO: get obstacle velocity
+         }
+
+         static auto prev_time = esp_timer_get_time();
+         auto time = esp_timer_get_time();
+         float dt = (time - prev_time) / 1'000'000.0f; // convert us to s
+         prev_time = time;
+
+         fmt::print("dt: {}\n", dt);
+
+         // update the fluid sim
+         static constexpr float g = -9.81;
+         static constexpr float flip_ratio = 0.9;
+         static constexpr int num_pressure_iters = 50;
+         static constexpr int num_particle_iters = 2;
+         static constexpr float over_relaxation = 1.9;
+         static constexpr bool compensate_drift = true;
+         static constexpr bool separate_particles = true;
+         static constexpr float obstacle_radius = 10.0f;
+         fluid->simulate(dt, g, flip_ratio, num_pressure_iters, num_particle_iters, over_relaxation,
+                         compensate_drift, separate_particles, obstacle_pos.x(), obstacle_pos.y(),
+                         obstacle_radius);
+
+         // TODO: render the fluid
+
+         return false;
+       },
+       .task_config = {
+           .name = "Fluid",
+           .stack_size_bytes = 6 * 1024,
+           .priority = 10,
+           .core_id = 1,
+       }});
+  fluid_task.start();
 
   // loop forever
   while (true) {
