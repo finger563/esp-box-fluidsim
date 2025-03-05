@@ -19,160 +19,143 @@
 /// readability. It is not meant to be used in production code, but as a
 /// reference for understanding the basics of FLIP simulations.
 namespace fluid {
-enum class CellType {
+enum CellType {
   FLUID,
   AIR,
   SOLID,
 }; // enum class CellType
 
-struct Particle {
-  espp::Vector2f pos;
-  espp::Vector2f vel;
-  float density;
-  int cell_index;
-  espp::Rgb color;
-}; // struct Particle
-
-struct GridCell {
-  float u, v;
-  float du, dv;
-  float prev_u, prev_v;
-  float p;
-  float s;
-  int first_particle_id;
-  int num_particles;
-  CellType type;
-  espp::Rgb color;
-}; // struct GridCell
-
-struct Fluid {
-  float density{0.0f};
-  std::vector<Particle> particles{};
-  std::vector<GridCell> grid{};
-  std::vector<size_t> cell_particle_ids{};
-  int width{0};
-  int height{0};
-
-  int num_x{0};
-  int num_y{0};
-  float h{0.0f};
-  float inv_spacing{0.0f};
-  size_t num_cells{0};
-  int max_particles{0};
-
-  int num_particles{0};
-
-  explicit Fluid(float density, int width, int height, float spacing, float particle_radius,
-                 int max_particles)
-      : density(density)
-      , width(width)
-      , height(height)
-      , max_particles(max_particles) {
-    num_x = std::floor(width / spacing) + 1;
-    num_y = std::floor(height / spacing) + 1;
-    h = std::max(width / num_x, height / num_y);
-    inv_spacing = 1.0f / h;
-    num_cells = num_x * num_y;
-    grid.resize(num_cells);
-    particles.reserve(max_particles);
-    cell_particle_ids.resize(max_particles);
-  }
-}; // struct Fluid
-
+/// C++ version of the above javascript code:
 class FlipFluid {
 public:
-  explicit FlipFluid(float density, size_t width, size_t height, float spacing,
-                     float particle_radius, size_t max_particles)
-      : fluid_(density, width, height, spacing, particle_radius, max_particles)
-      , rest_density(density)
-      , particle_radius(particle_radius)
-      , inv_spacing(1.0f / spacing) {}
+  FlipFluid(float density, int width, int height, float spacing, float particleRadius,
+            int maxParticles)
+      : density(density)
+      , fNumX(std::floor(width / spacing) + 1)
+      , fNumY(std::floor(height / spacing) + 1)
+      , h(std::max(width / fNumX, height / fNumY))
+      , fInvSpacing(1.0f / h)
+      , fNumCells(fNumX * fNumY)
+      , u(fNumCells)
+      , v(fNumCells)
+      , du(fNumCells)
+      , dv(fNumCells)
+      , prevU(fNumCells)
+      , prevV(fNumCells)
+      , p(fNumCells)
+      , s(fNumCells)
+      , cellType(fNumCells)
+      , cellColor(3 * fNumCells)
+      , maxParticles(maxParticles)
+      , particlePos(2 * maxParticles)
+      , particleColor(3 * maxParticles)
+      , particleVel(2 * maxParticles)
+      , particleDensity(fNumCells)
+      , particleRestDensity(0.0f)
+      , particleRadius(particleRadius)
+      , pInvSpacing(1.0f / (2.2f * particleRadius))
+      , pNumX(std::floor(width * pInvSpacing) + 1)
+      , pNumY(std::floor(height * pInvSpacing) + 1)
+      , pNumCells(pNumX * pNumY)
+      , numCellParticles(pNumCells)
+      , firstCellParticle(pNumCells + 1)
+      , cellParticleIds(maxParticles)
+      , numParticles(0) {}
 
-  void integrate_particles(float dt, const espp::Vector2f &gravity) {
-    for (auto &p : fluid_.particles) {
-      p.vel += gravity * dt;
-      p.pos += p.vel * dt;
+  void integrateParticles(float dt, float gravity) {
+    for (int i = 0; i < numParticles; i++) {
+      particleVel[2 * i + 1] += dt * gravity;
+      particlePos[2 * i] += particleVel[2 * i] * dt;
+      particlePos[2 * i + 1] += particleVel[2 * i + 1] * dt;
     }
   }
 
-  void push_particles_apart(size_t num_iterations) {
-    static constexpr float color_diffusion_coeff = 0.001f;
-    const float min_dist = 2.0f * particle_radius;
-    const float min_dist2 = min_dist * min_dist;
-    // Count particles per cell
-    for (int i = 0; i < fluid_.num_particles; i++) {
-      const auto &p = fluid_.particles[i];
-      const auto xi =
-          std::clamp(static_cast<int>(p.pos.x() * fluid_.inv_spacing), 0, fluid_.num_x - 1);
-      const auto yi =
-          std::clamp(static_cast<int>(p.pos.y() * fluid_.inv_spacing), 0, fluid_.num_y - 1);
-      const auto cell_nr = xi * fluid_.num_y + yi;
-      fluid_.grid[cell_nr].num_particles++;
+  void pushParticlesApart(int numIters) {
+    float colorDiffusionCoeff = 0.001f;
+
+    // count particles per cell
+    std::fill(numCellParticles.begin(), numCellParticles.end(), 0);
+
+    for (int i = 0; i < numParticles; i++) {
+      float x = particlePos[2 * i];
+      float y = particlePos[2 * i + 1];
+
+      int xi = std::clamp(static_cast<int>(x * pInvSpacing), 0, pNumX - 1);
+      int yi = std::clamp(static_cast<int>(y * pInvSpacing), 0, pNumY - 1);
+      int cellNr = xi * pNumY + yi;
+      numCellParticles[cellNr]++;
     }
 
-    // Partial sums
+    // partial sums
     int first = 0;
-    for (int i = 0; i < fluid_.num_cells; i++) {
-      first += fluid_.grid[i].num_particles;
-      fluid_.grid[i].first_particle_id = first;
+    for (int i = 0; i < pNumCells; i++) {
+      first += numCellParticles[i];
+      firstCellParticle[i] = first;
     }
-    // fluid_.grid[fluid_.num_cells].first_particle_id = first; // guard
+    firstCellParticle[pNumCells] = first; // guard
 
-    // Fill particles into cells
-    for (int i = 0; i < fluid_.num_particles; i++) {
-      const auto &p = fluid_.particles[i];
-      const auto xi =
-          std::clamp(static_cast<int>(p.pos.x() * fluid_.inv_spacing), 0, fluid_.num_x - 1);
-      const auto yi =
-          std::clamp(static_cast<int>(p.pos.y() * fluid_.inv_spacing), 0, fluid_.num_y - 1);
-      const auto cell_nr = xi * fluid_.num_y + yi;
-      fluid_.grid[cell_nr].first_particle_id--;
-      fluid_.cell_particle_ids[fluid_.grid[cell_nr].first_particle_id] = i;
+    // fill particles into cells
+    for (int i = 0; i < numParticles; i++) {
+      float x = particlePos[2 * i];
+      float y = particlePos[2 * i + 1];
+
+      int xi = std::clamp(static_cast<int>(x * pInvSpacing), 0, pNumX - 1);
+      int yi = std::clamp(static_cast<int>(y * pInvSpacing), 0, pNumY - 1);
+      int cellNr = xi * pNumY + yi;
+      firstCellParticle[cellNr]--;
+      cellParticleIds[firstCellParticle[cellNr]] = i;
     }
 
-    // Push particles apart
-    for (int iter = 0; iter < num_iterations; iter++) {
-      for (int i = 0; i < fluid_.num_particles; i++) {
-        const auto &p = fluid_.particles[i];
-        const auto xi =
-            std::clamp(static_cast<int>(p.pos.x() * fluid_.inv_spacing), 0, fluid_.num_x - 1);
-        const auto yi =
-            std::clamp(static_cast<int>(p.pos.y() * fluid_.inv_spacing), 0, fluid_.num_y - 1);
-        const auto x0 = std::max(xi - 1, 0);
-        const auto y0 = std::max(yi - 1, 0);
-        const auto x1 = std::min(xi + 1, fluid_.num_x - 1);
-        const auto y1 = std::min(yi + 1, fluid_.num_y - 1);
+    // push particles apart
+    float minDist = 2.0f * particleRadius;
+    float minDist2 = minDist * minDist;
+
+    for (int iter = 0; iter < numIters; iter++) {
+      for (int i = 0; i < numParticles; i++) {
+        float px = particlePos[2 * i];
+        float py = particlePos[2 * i + 1];
+
+        int pxi = static_cast<int>(px * pInvSpacing);
+        int pyi = static_cast<int>(py * pInvSpacing);
+        int x0 = std::max(pxi - 1, 0);
+        int y0 = std::max(pyi - 1, 0);
+        int x1 = std::min(pxi + 1, pNumX - 1);
+        int y1 = std::min(pyi + 1, pNumY - 1);
+
         for (int xi = x0; xi <= x1; xi++) {
           for (int yi = y0; yi <= y1; yi++) {
-            const auto cell_nr = xi * fluid_.num_y + yi;
-            const auto first = fluid_.grid[cell_nr].first_particle_id;
-            const auto last = first + fluid_.grid[cell_nr].num_particles;
+            int cellNr = xi * pNumY + yi;
+            int first = firstCellParticle[cellNr];
+            int last = firstCellParticle[cellNr + 1];
             for (int j = first; j < last; j++) {
-              const auto id = fluid_.cell_particle_ids[j];
-              if (id == i) {
+              int id = cellParticleIds[j];
+              if (id == i)
                 continue;
-              }
-              const auto &q = fluid_.particles[id];
-              const auto dx = q.pos.x() - p.pos.x();
-              const auto dy = q.pos.y() - p.pos.y();
-              const auto d2 = dx * dx + dy * dy;
-              if (d2 > min_dist2 || d2 == 0.0f) {
+              float qx = particlePos[2 * id];
+              float qy = particlePos[2 * id + 1];
+
+              float dx = qx - px;
+              float dy = qy - py;
+              float d2 = dx * dx + dy * dy;
+              if (d2 > minDist2 || d2 == 0.0f)
                 continue;
+              float d = std::sqrt(d2);
+              float s = 0.5f * (minDist - d) / d;
+              dx *= s;
+              dy *= s;
+              particlePos[2 * i] -= dx;
+              particlePos[2 * i + 1] -= dy;
+              particlePos[2 * id] += dx;
+              particlePos[2 * id + 1] += dy;
+
+              // diffuse colors
+              for (int k = 0; k < 3; k++) {
+                float color0 = particleColor[3 * i + k];
+                float color1 = particleColor[3 * id + k];
+                float color = (color0 + color1) * 0.5f;
+                particleColor[3 * i + k] = color0 + (color - color0) * colorDiffusionCoeff;
+                particleColor[3 * id + k] = color1 + (color - color1) * colorDiffusionCoeff;
               }
-              const auto d = std::sqrt(d2);
-              const auto s = 0.5f * (min_dist - d) / d;
-              const auto dxs = dx * s;
-              const auto dys = dy * s;
-              fluid_.particles[i].pos.x(fluid_.particles[i].pos.x() - dxs);
-              fluid_.particles[i].pos.y(fluid_.particles[i].pos.y() - dys);
-              fluid_.particles[id].pos.x(fluid_.particles[id].pos.x() + dxs);
-              fluid_.particles[id].pos.y(fluid_.particles[id].pos.y() + dys);
-              // TODO: Diffuse colors
-              // const auto color0 = fluid_.particles[i].color;
-              // const auto color1 = fluid_.particles[id].color;
-              // const auto color = color0 + color1;
-              // fluid_.particles[i].color = color0 + (color - color0) * color_diffusion_coeff;
-              // fluid_.particles[id].color = color1 + (color - color1) * color_diffusion_coeff;
             }
           }
         }
@@ -180,153 +163,175 @@ public:
     }
   }
 
-  void handle_particle_collisions(const espp::Vector2f &obstacle_pos, float obstacle_radius) {
-    const auto h = 1.0f / fluid_.inv_spacing;
-    const auto r = particle_radius;
-    const auto or2 = obstacle_radius * obstacle_radius;
-    const auto min_dist = obstacle_radius + r;
-    const auto min_dist2 = min_dist * min_dist;
-    const auto min_x = h + r;
-    const auto max_x = (fluid_.num_x - 1) * h - r;
-    const auto min_y = h + r;
-    const auto max_y = (fluid_.num_y - 1) * h - r;
-    for (int i = 0; i < fluid_.num_particles; i++) {
-      auto &p = fluid_.particles[i];
-      auto dx = p.pos.x() - obstacle_pos.x();
-      auto dy = p.pos.y() - obstacle_pos.y();
-      auto d2 = dx * dx + dy * dy;
-      // Obstacle collision
-      if (d2 < min_dist2) {
-        p.vel = espp::Vector2f(0.0f, 0.0f);
+  void handleParticleCollisions(float obstacleX, float obstacleY, float obstacleRadius) {
+    float h = 1.0f / fInvSpacing;
+    float r = particleRadius;
+    float or_ = obstacleRadius;
+    // float or2 = or_ * or_;
+    float minDist = obstacleRadius + r;
+    float minDist2 = minDist * minDist;
+
+    float minX = h + r;
+    float maxX = (fNumX - 1) * h - r;
+    float minY = h + r;
+    float maxY = (fNumY - 1) * h - r;
+
+    for (int i = 0; i < numParticles; i++) {
+      float x = particlePos[2 * i];
+      float y = particlePos[2 * i + 1];
+
+      float dx = x - obstacleX;
+      float dy = y - obstacleY;
+      float d2 = dx * dx + dy * dy;
+
+      // obstacle collision
+      if (d2 < minDist2) {
+        // TODO: obstacle collision velocity response
+        // particleVel[2 * i] = scene.obstacleVelX;
+        // particleVel[2 * i + 1] = scene.obstacleVelY;
       }
-      // Wall collisions
-      if (p.pos.x() < min_x) {
-        p.pos.x(min_x);
-        p.vel.x(0.0f);
+
+      // wall collisions
+      if (x < minX) {
+        x = minX;
+        particleVel[2 * i] = 0.0f;
       }
-      if (p.pos.x() > max_x) {
-        p.pos.x(max_x);
-        p.vel.x(0.0f);
+      if (x > maxX) {
+        x = maxX;
+        particleVel[2 * i] = 0.0f;
       }
-      if (p.pos.y() < min_y) {
-        p.pos.y(min_y);
-        p.vel.y(0.0f);
+      if (y < minY) {
+        y = minY;
+        particleVel[2 * i + 1] = 0.0f;
       }
-      if (p.pos.y() > max_y) {
-        p.pos.y(max_y);
-        p.vel.y(0.0f);
+      if (y > maxY) {
+        y = maxY;
+        particleVel[2 * i + 1] = 0.0f;
       }
+      particlePos[2 * i] = x;
+      particlePos[2 * i + 1] = y;
     }
   }
 
-  void update_particle_density() {
-    const auto n = fluid_.num_y;
-    const auto h = fluid_.h;
-    const auto h1 = fluid_.inv_spacing;
-    const auto h2 = 0.5f * h;
-    for (int i = 0; i < fluid_.num_particles; i++) {
-      auto &p = fluid_.particles[i];
-      auto x = p.pos.x();
-      auto y = p.pos.y();
-      x = std::clamp(x, h, (fluid_.num_x - 1) * h);
-      y = std::clamp(y, h, (fluid_.num_y - 1) * h);
-      const auto x0 = std::floor((x - h2) * h1);
-      const auto tx = ((x - h2) - x0 * h) * h1;
-      const auto x1 = std::min<int>(x0 + 1, fluid_.num_x - 2);
-      const auto y0 = std::floor((y - h2) * h1);
-      const auto ty = ((y - h2) - y0 * h) * h1;
-      const auto y1 = std::min<int>(y0 + 1, fluid_.num_y - 2);
-      const auto sx = 1.0f - tx;
-      const auto sy = 1.0f - ty;
-      if (x0 < fluid_.num_x && y0 < fluid_.num_y) {
-        fluid_.grid[x0 * n + y0].s += sx * sy;
-      }
-      if (x1 < fluid_.num_x && y0 < fluid_.num_y) {
-        fluid_.grid[x1 * n + y0].s += tx * sy;
-      }
-      if (x1 < fluid_.num_x && y1 < fluid_.num_y) {
-        fluid_.grid[x1 * n + y1].s += tx * ty;
-      }
-      if (x0 < fluid_.num_x && y1 < fluid_.num_y) {
-        fluid_.grid[x0 * n + y1].s += sx * ty;
-      }
+  void updateParticleDensity() {
+    float n = fNumY;
+    float h = this->h;
+    float h1 = fInvSpacing;
+    float h2 = 0.5f * h;
+
+    std::fill(particleDensity.begin(), particleDensity.end(), 0.0f);
+
+    for (int i = 0; i < numParticles; i++) {
+      float x = particlePos[2 * i];
+      float y = particlePos[2 * i + 1];
+
+      x = std::clamp(x, h, (fNumX - 1) * h);
+      y = std::clamp(y, h, (fNumY - 1) * h);
+
+      int x0 = std::floor((x - h2) * h1);
+      float tx = ((x - h2) - x0 * h) * h1;
+      int x1 = std::min(x0 + 1, fNumX - 2);
+
+      int y0 = std::floor((y - h2) * h1);
+      float ty = ((y - h2) - y0 * h) * h1;
+      int y1 = std::min(y0 + 1, fNumY - 2);
+
+      float sx = 1.0f - tx;
+      float sy = 1.0f - ty;
+
+      if (x0 < fNumX && y0 < fNumY)
+        particleDensity[x0 * n + y0] += sx * sy;
+      if (x1 < fNumX && y0 < fNumY)
+        particleDensity[x1 * n + y0] += tx * sy;
+      if (x1 < fNumX && y1 < fNumY)
+        particleDensity[x1 * n + y1] += tx * ty;
+      if (x0 < fNumX && y1 < fNumY)
+        particleDensity[x0 * n + y1] += sx * ty;
     }
-    if (rest_density == 0.0f) {
+
+    if (particleRestDensity == 0.0f) {
       float sum = 0.0f;
-      int num_fluid_cells = 0;
-      for (int i = 0; i < fluid_.num_cells; i++) {
-        if (fluid_.grid[i].type == CellType::FLUID) {
-          sum += fluid_.grid[i].s;
-          num_fluid_cells++;
+      int numFluidCells = 0;
+
+      for (int i = 0; i < fNumCells; i++) {
+        if (cellType[i] == CellType::FLUID) {
+          sum += particleDensity[i];
+          numFluidCells++;
         }
       }
-      if (num_fluid_cells > 0) {
-        rest_density = sum / num_fluid_cells;
-      }
+
+      if (numFluidCells > 0)
+        particleRestDensity = sum / numFluidCells;
     }
   }
 
-  void transfer_velocities(bool to_grid, float flip_ratio = 0.0f) {
-    const auto n = fluid_.num_y;
-    const auto h = fluid_.h;
-    const auto h1 = fluid_.inv_spacing;
-    const auto h2 = 0.5f * h;
-    if (to_grid) {
-      for (auto &cell : fluid_.grid) {
-        cell.prev_u = cell.u;
-        cell.prev_v = cell.v;
-        cell.du = 0.0f;
-        cell.dv = 0.0f;
-        cell.u = 0.0f;
-        cell.v = 0.0f;
-        cell.type = cell.s == 0.0f ? CellType::SOLID : CellType::AIR;
-      }
-      for (int i = 0; i < fluid_.num_particles; i++) {
-        const auto &p = fluid_.particles[i];
-        const auto xi =
-            std::clamp(static_cast<int>(p.pos.x() * fluid_.inv_spacing), 0, fluid_.num_x - 1);
-        const auto yi =
-            std::clamp(static_cast<int>(p.pos.y() * fluid_.inv_spacing), 0, fluid_.num_y - 1);
-        const auto cell_nr = xi * n + yi;
-        if (fluid_.grid[cell_nr].type == CellType::AIR) {
-          fluid_.grid[cell_nr].type = CellType::FLUID;
-        }
+  void transferVelocities(bool toGrid, float flipRatio) {
+    float n = fNumY;
+    float h = this->h;
+    float h1 = fInvSpacing;
+    float h2 = 0.5f * h;
+
+    if (toGrid) {
+      prevU = u;
+      prevV = v;
+
+      std::fill(du.begin(), du.end(), 0.0f);
+      std::fill(dv.begin(), dv.end(), 0.0f);
+      std::fill(u.begin(), u.end(), 0.0f);
+      std::fill(v.begin(), v.end(), 0.0f);
+
+      for (int i = 0; i < fNumCells; i++)
+        cellType[i] = s[i] == 0.0f ? CellType::SOLID : CellType::AIR;
+
+      for (int i = 0; i < numParticles; i++) {
+        float x = particlePos[2 * i];
+        float y = particlePos[2 * i + 1];
+        int xi = std::clamp(static_cast<int>(x * h1), 0, fNumX - 1);
+        int yi = std::clamp(static_cast<int>(y * h1), 0, fNumY - 1);
+        int cellNr = xi * n + yi;
+        if (cellType[cellNr] == CellType::AIR)
+          cellType[cellNr] = CellType::FLUID;
       }
     }
+
     for (int component = 0; component < 2; component++) {
-      const auto dx = component == 0 ? 0.0f : h2;
-      const auto dy = component == 0 ? h2 : 0.0f;
-      auto &f = component == 0 ? fluid_.grid[0].u : fluid_.grid[0].v;
-      auto &prev_f = component == 0 ? fluid_.grid[0].prev_u : fluid_.grid[0].prev_v;
-      auto &d = component == 0 ? fluid_.grid[0].du : fluid_.grid[0].dv;
-      for (int i = 0; i < fluid_.num_particles; i++) {
-        const auto &p = fluid_.particles[i];
-        const auto x = p.pos.x();
-        const auto y = p.pos.y();
-        const auto xi = std::clamp(static_cast<int>(x * fluid_.inv_spacing), 0, fluid_.num_x - 1);
-        const auto yi = std::clamp(static_cast<int>(y * fluid_.inv_spacing), 0, fluid_.num_y - 1);
+      float dx = component == 0 ? 0.0f : h2;
+      float dy = component == 0 ? h2 : 0.0f;
 
-        const auto x0 = std::min(std::max(xi - 1, 0), fluid_.num_x - 1);
-        const auto tx = (x - (x0 * h)) * h1;
-        const auto x1 = std::min(xi + 1, fluid_.num_x - 1);
+      auto &f = component == 0 ? u : v;
+      auto &prevF = component == 0 ? prevU : prevV;
+      auto &d = component == 0 ? du : dv;
 
-        const auto y0 = std::min(std::max(yi - 1, 0), fluid_.num_y - 1);
-        const auto ty = (y - (y0 * h)) * h1;
-        const auto y1 = std::min(yi + 1, fluid_.num_y - 1);
+      for (int i = 0; i < numParticles; i++) {
+        float x = particlePos[2 * i];
+        float y = particlePos[2 * i + 1];
 
-        const auto sx = 1.0f - tx;
-        const auto sy = 1.0f - ty;
-        const auto d0 = sx * sy;
-        const auto d1 = tx * sy;
-        const auto d2 = tx * ty;
-        const auto d3 = sx * ty;
-        const auto nr0 = x0 * n + y0;
-        const auto nr1 = x1 * n + y0;
-        const auto nr2 = x1 * n + y1;
-        const auto nr3 = x0 * n + y1;
+        x = std::clamp(x, h, (fNumX - 1) * h);
+        y = std::clamp(y, h, (fNumY - 1) * h);
 
-        if (to_grid) {
-          const auto pv = component == 0 ? p.vel.x() : p.vel.y();
+        int x0 = std::min(static_cast<int>((x - dx) * h1), fNumX - 2);
+        float tx = ((x - dx) - x0 * h) * h1;
+        int x1 = std::min(x0 + 1, fNumX - 2);
+
+        int y0 = std::min(static_cast<int>((y - dy) * h1), fNumY - 2);
+        float ty = ((y - dy) - y0 * h) * h1;
+        int y1 = std::min(y0 + 1, fNumY - 2);
+
+        float sx = 1.0f - tx;
+        float sy = 1.0f - ty;
+
+        float d0 = sx * sy;
+        float d1 = tx * sy;
+        float d2 = tx * ty;
+        float d3 = sx * ty;
+
+        int nr0 = x0 * n + y0;
+        int nr1 = x1 * n + y0;
+        int nr2 = x1 * n + y1;
+        int nr3 = x0 * n + y1;
+
+        if (toGrid) {
+          float pv = particleVel[2 * i + component];
           f[nr0] += pv * d0;
           d[nr0] += d0;
           f[nr1] += pv * d1;
@@ -336,127 +341,212 @@ public:
           f[nr3] += pv * d3;
           d[nr3] += d3;
         } else {
-          const auto offset = component == 0 ? n : 1;
-          const auto valid0 = fluid_.grid[nr0].type != CellType::AIR ||
-                                      fluid_.grid[nr0 - offset].type != CellType::AIR
-                                  ? 1.0f
-                                  : 0.0f;
-          const auto valid1 = fluid_.grid[nr1].type != CellType::AIR ||
-                                      fluid_.grid[nr1 - offset].type != CellType::AIR
-                                  ? 1.0f
-                                  : 0.0f;
-          const auto valid2 = fluid_.grid[nr2].type != CellType::AIR ||
-                                      fluid_.grid[nr2 - offset].type != CellType::AIR
-                                  ? 1.0f
-                                  : 0.0f;
-          const auto valid3 = fluid_.grid[nr3].type != CellType::AIR ||
-                                      fluid_.grid[nr3 - offset].type != CellType::AIR
-                                  ? 1.0f
-                                  : 0.0f;
-          const auto v = component == 0 ? p.vel.x() : p.vel.y();
-          const auto d = valid0 * d0 + valid1 * d1 + valid2 * d2 + valid3 * d3;
+          int offset = component == 0 ? n : 1;
+          float valid0 = cellType[nr0] != CellType::AIR || cellType[nr0 - offset] != CellType::AIR
+                             ? 1.0f
+                             : 0.0f;
+          float valid1 = cellType[nr1] != CellType::AIR || cellType[nr1 - offset] != CellType::AIR
+                             ? 1.0f
+                             : 0.0f;
+          float valid2 = cellType[nr2] != CellType::AIR || cellType[nr2 - offset] != CellType::AIR
+                             ? 1.0f
+                             : 0.0f;
+          float valid3 = cellType[nr3] != CellType::AIR || cellType[nr3 - offset] != CellType::AIR
+                             ? 1.0f
+                             : 0.0f;
+
+          float v = particleVel[2 * i + component];
+          float d = valid0 * d0 + valid1 * d1 + valid2 * d2 + valid3 * d3;
+
           if (d > 0.0f) {
-            const auto pic_v = (valid0 * d0 * f[nr0] + valid1 * d1 * f[nr1] + valid2 * d2 * f[nr2] +
-                                valid3 * d3 * f[nr3]) /
-                               d;
-            const auto corr =
-                (valid0 * d0 * (f[nr0] - prev_f[nr0]) + valid1 * d1 * (f[nr1] - prev_f[nr1]) +
-                 valid2 * d2 * (f[nr2] - prev_f[nr2]) + valid3 * d3 * (f[nr3] - prev_f[nr3])) /
+            float picV = (valid0 * d0 * f[nr0] + valid1 * d1 * f[nr1] + valid2 * d2 * f[nr2] +
+                          valid3 * d3 * f[nr3]) /
+                         d;
+            float corr =
+                (valid0 * d0 * (f[nr0] - prevF[nr0]) + valid1 * d1 * (f[nr1] - prevF[nr1]) +
+                 valid2 * d2 * (f[nr2] - prevF[nr2]) + valid3 * d3 * (f[nr3] - prevF[nr3])) /
                 d;
-            const auto flip_v = v + corr;
-            fluid_.particles[i].vel.x((1.0f - flip_ratio) * pic_v + flip_ratio * flip_v);
+            float flipV = v + corr;
+
+            particleVel[2 * i + component] = (1.0f - flipRatio) * picV + flipRatio * flipV;
           }
         }
       }
-      if (to_grid) {
-        for (int i = 0; i < fluid_.num_cells; i++) {
-          if (d[i] > 0.0f) {
+
+      if (toGrid) {
+        for (int i = 0; i < f.size(); i++) {
+          if (d[i] > 0.0f)
             f[i] /= d[i];
-          }
         }
-        for (int i = 0; i < fluid_.num_x; i++) {
-          for (int j = 0; j < fluid_.num_y; j++) {
-            const auto solid = fluid_.grid[i * n + j].type == CellType::SOLID;
-            if (solid || (i > 0 && fluid_.grid[(i - 1) * n + j].type == CellType::SOLID)) {
-              fluid_.grid[i * n + j].u = fluid_.grid[i * n + j].prev_u;
-            }
-            if (solid || (j > 0 && fluid_.grid[i * n + j - 1].type == CellType::SOLID)) {
-              fluid_.grid[i * n + j].v = fluid_.grid[i * n + j].prev_v;
-            }
+
+        // restore solid cells
+        for (int i = 0; i < fNumX; i++) {
+          for (int j = 0; j < fNumY; j++) {
+            bool solid = cellType[i * n + j] == CellType::SOLID;
+            if (solid || (i > 0 && cellType[(i - 1) * n + j] == CellType::SOLID))
+              u[i * n + j] = prevU[i * n + j];
+            if (solid || (j > 0 && cellType[i * n + j - 1] == CellType::SOLID))
+              v[i * n + j] = prevV[i * n + j];
           }
         }
       }
     }
   }
 
-  void solve_incompressibility(size_t num_iterations, float dt, float over_relaxation,
-                               bool compensate_drift = true) {
-    const auto cp = fluid_.density * fluid_.h / dt;
-    for (int iter = 0; iter < num_iterations; iter++) {
-      for (int i = 1; i < fluid_.num_x - 1; i++) {
-        for (int j = 1; j < fluid_.num_y - 1; j++) {
-          if (fluid_.grid[i * fluid_.num_y + j].type != CellType::FLUID) {
+  void solveIncompressibility(int numIters, float dt, float overRelaxation,
+                              bool compensateDrift = true) {
+    std::fill(p.begin(), p.end(), 0.0f);
+    prevU = u;
+    prevV = v;
+
+    int n = fNumY;
+    float cp = density * h / dt;
+
+    // for (int i = 0; i < fNumCells; i++) {
+    //   float u = this->u[i];
+    //   float v = this->v[i];
+    // }
+
+    for (int iter = 0; iter < numIters; iter++) {
+      for (int i = 1; i < fNumX - 1; i++) {
+        for (int j = 1; j < fNumY - 1; j++) {
+          if (cellType[i * n + j] != CellType::FLUID)
             continue;
+
+          int center = i * n + j;
+          int left = (i - 1) * n + j;
+          int right = (i + 1) * n + j;
+          int bottom = i * n + j - 1;
+          int top = i * n + j + 1;
+
+          // float s = this->s[center];
+          float sx0 = this->s[left];
+          float sx1 = this->s[right];
+          float sy0 = this->s[bottom];
+          float sy1 = this->s[top];
+          float s = sx0 + sx1 + sy0 + sy1;
+          if (s == 0.0f)
+            continue;
+
+          float div = this->u[right] - this->u[center] + this->v[top] - this->v[center];
+
+          if (particleRestDensity > 0.0f && compensateDrift) {
+            float k = 1.0f;
+            float compression = particleDensity[i * n + j] - particleRestDensity;
+            if (compression > 0.0f)
+              div = div - k * compression;
           }
-          const auto center = i * fluid_.num_y + j;
-          const auto left = (i - 1) * fluid_.num_y + j;
-          const auto right = (i + 1) * fluid_.num_y + j;
-          const auto bottom = i * fluid_.num_y + j - 1;
-          const auto top = i * fluid_.num_y + j + 1;
-          const auto s = fluid_.grid[center].s;
-          const auto sx0 = fluid_.grid[left].s;
-          const auto sx1 = fluid_.grid[right].s;
-          const auto sy0 = fluid_.grid[bottom].s;
-          const auto sy1 = fluid_.grid[top].s;
-          const auto div = fluid_.grid[right].u - fluid_.grid[center].u + fluid_.grid[top].v -
-                           fluid_.grid[center].v;
-          if (fluid_.grid[center].type == CellType::FLUID) {
-            const auto p = -div / s;
-            fluid_.grid[center].p += cp * p;
-            fluid_.grid[center].u -= sx0 * p;
-            fluid_.grid[right].u += sx1 * p;
-            fluid_.grid[center].v -= sy0 * p;
-            fluid_.grid[top].v += sy1 * p;
-          }
+
+          float p = -div / s;
+          p *= overRelaxation;
+          this->p[center] += cp * p;
+
+          this->u[center] -= sx0 * p;
+          this->u[right] += sx1 * p;
+          this->v[center] -= sy0 * p;
+          this->v[top] += sy1 * p;
         }
       }
     }
   }
 
-  void update_particle_colors() {}
-
-  void set_sci_color(size_t cell_index, float value, float min_value, float max_value) {}
-
-  void update_cell_colors() {}
-
-  void simulate(float dt, const espp::Vector2f &gravity, float flip_ratio,
-                size_t num_pressure_iterations, size_t num_particle_iterations,
-                float over_relaxation, bool compensate_drift, bool separate_particles,
-                const espp::Vector2f &obstacle_pos, float obstacle_radius) {
-    const auto num_sub_steps = 1;
-    const auto sdt = dt / num_sub_steps;
-    for (int step = 0; step < num_sub_steps; step++) {
-      integrate_particles(sdt, gravity);
-      if (separate_particles) {
-        push_particles_apart(num_particle_iterations);
-      }
-      handle_particle_collisions(obstacle_pos, obstacle_radius);
-      transfer_velocities(true);
-      update_particle_density();
-      solve_incompressibility(num_pressure_iterations, sdt, over_relaxation, compensate_drift);
-      transfer_velocities(false, flip_ratio);
+  void updateParticleColors() {
+    for (int i = 0; i < numParticles; i++) {
+      particleColor[3 * i] *= 0.99f;
+      particleColor[3 * i + 1] *= 0.99f;
+      particleColor[3 * i + 2] = std::clamp(particleColor[3 * i + 2] + 0.001f, 0.0f, 1.0f);
     }
-
-    update_particle_colors();
-    update_cell_colors();
   }
 
-protected:
-  Fluid fluid_;
+  void setSciColor(int cellNr, float val, float minVal, float maxVal) {
+    val = std::min(std::max(val, minVal), maxVal - 0.0001f);
+    float d = maxVal - minVal;
+    val = d == 0.0f ? 0.5f : (val - minVal) / d;
+    float m = 0.25f;
+    int num = std::floor(val / m);
+    float s = (val - num * m) / m;
+    float r, g, b;
 
-  float rest_density;
-  float particle_radius;
-  float inv_spacing;
+    switch (num) {
+    case 0:
+      r = 0.0f;
+      g = s;
+      b = 1.0f;
+      break;
+    case 1:
+      r = 0.0f;
+      g = 1.0f;
+      b = 1.0f - s;
+      break;
+    case 2:
+      r = s;
+      g = 1.0f;
+      b = 0.0f;
+      break;
+    case 3:
+      r = 1.0f;
+      g = 1.0f - s;
+      b = 0.0f;
+      break;
+    }
+
+    cellColor[3 * cellNr] = r;
+    cellColor[3 * cellNr + 1] = g;
+    cellColor[3 * cellNr + 2] = b;
+  }
+
+  void updateCellColors() {
+    std::fill(cellColor.begin(), cellColor.end(), 0.0f);
+
+    for (int i = 0; i < fNumCells; i++) {
+      if (cellType[i] == CellType::SOLID) {
+        cellColor[3 * i] = 0.5f;
+        cellColor[3 * i + 1] = 0.5f;
+        cellColor[3 * i + 2] = 0.5f;
+      } else if (cellType[i] == CellType::FLUID) {
+        float d = particleDensity[i];
+        if (particleRestDensity > 0.0f)
+          d /= particleRestDensity;
+        setSciColor(i, d, 0.0f, 2.0f);
+      }
+    }
+  }
+
+  void simulate(float dt, float gravity, float flipRatio, int numPressureIters,
+                int numParticleIters, float overRelaxation, bool compensateDrift,
+                bool separateParticles, float obstacleX, float obstacleY, float obstacleRadius) {
+    int numSubSteps = 1;
+    float sdt = dt / numSubSteps;
+
+    for (int step = 0; step < numSubSteps; step++) {
+      integrateParticles(sdt, gravity);
+      if (separateParticles)
+        pushParticlesApart(numParticleIters);
+      handleParticleCollisions(obstacleX, obstacleY, obstacleRadius);
+      transferVelocities(true, 0.0f); // TODO: what value here?
+      updateParticleDensity();
+      solveIncompressibility(numPressureIters, sdt, overRelaxation, compensateDrift);
+      transferVelocities(false, flipRatio);
+    }
+
+    updateParticleColors();
+    updateCellColors();
+  }
+
+  float density;
+  int fNumX, fNumY;
+  float h, fInvSpacing;
+  int fNumCells;
+  std::vector<float> u, v, du, dv, prevU, prevV, p, s;
+  std::vector<int> cellType;
+  std::vector<float> cellColor;
+  int maxParticles;
+  std::vector<float> particlePos, particleColor, particleVel;
+  std::vector<float> particleDensity;
+  float particleRestDensity, particleRadius;
+  float pInvSpacing;
+  int pNumX, pNumY, pNumCells;
+  std::vector<int> numCellParticles, firstCellParticle, cellParticleIds;
+  int numParticles;
 }; // class FlipFluid
-
 } // namespace fluid
