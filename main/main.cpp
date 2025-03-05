@@ -14,7 +14,7 @@
 using namespace std::chrono_literals;
 
 extern "C" void app_main(void) {
-  espp::Logger logger({.tag = "Fluidsim", .level = espp::Logger::Verbosity::DEBUG});
+  espp::Logger logger({.tag = "Fluidsim", .level = espp::Logger::Verbosity::INFO});
 
   logger.info("Bootup");
 
@@ -25,6 +25,7 @@ extern "C" void app_main(void) {
   // mutex for the touch position
   std::mutex touch_mutex;
   espp::Vector2f touch_pos{};
+  bool new_touch = false;
 
   auto touch_callback = [&](const auto &touch) {
     // NOTE: since we're directly using the touchpad data, and not using the
@@ -42,11 +43,9 @@ extern "C" void app_main(void) {
       }
       // if there is a touch point, use it to interact with the fluid sim
       if (touchpad_data.num_touch_points > 0) {
-        // TODO: interact with the fluid sim
-        {
-          std::lock_guard<std::mutex> lock(touch_mutex);
-          touch_pos = espp::Vector2f(touchpad_data.x, touchpad_data.y);
-        }
+        std::lock_guard<std::mutex> lock(touch_mutex);
+        touch_pos = espp::Vector2f(touchpad_data.x, touchpad_data.y);
+        new_touch = true;
       }
     }
   };
@@ -187,6 +186,19 @@ extern "C" void app_main(void) {
   std::shared_ptr<fluid::FlipFluid> fluid = std::make_shared<fluid::FlipFluid>(
       density, sim_width, sim_height, spacing, particle_radius, max_particles);
 
+  static constexpr float g = -9.81;
+  static constexpr float flip_ratio = 0.9;
+  static constexpr int num_pressure_iters = 50;
+  static constexpr int num_particle_iters = 2;
+  static constexpr float over_relaxation = 1.9;
+  static constexpr bool compensate_drift = true;
+  static constexpr bool separate_particles = true;
+  static constexpr float obstacle_radius = 10.0f;
+
+  static constexpr int lcd_width = box.lcd_width();
+  static constexpr int lcd_height = box.lcd_height();
+  static constexpr int framebuffer_size = box.lcd_width() * box.lcd_height() * sizeof(uint16_t);
+
   // create particles
   fluid->numParticles = numX * numY;
   int p = 0;
@@ -209,10 +221,13 @@ extern "C" void app_main(void) {
     }
   }
 
+  fluid->set_obstacle(10, 10, obstacle_radius, true, 0);
+
   // now make a task to update the fluid sim
   espp::Timer fluid_timer(
-      {.period = 10ms,
-       .callback = [&touch_pos, &touch_mutex, &gravity, &gravity_mutex, &fluid]() -> bool {
+      {.period = 5ms,
+       .callback = [&new_touch, &touch_pos, &touch_mutex, &gravity, &gravity_mutex,
+                    &fluid]() -> bool {
          // get the gravity vector
          std::array<float, 3> gravity_vector{};
          {
@@ -220,31 +235,31 @@ extern "C" void app_main(void) {
            gravity_vector = gravity;
          }
 
-         // get the obstacle position (where the user is touching)
-         espp::Vector2f obstacle_pos{};
-         {
-           std::lock_guard<std::mutex> lock(touch_mutex);
-           // get obstacle position
-           obstacle_pos = touch_pos;
-           // TODO: get obstacle velocity
-         }
+         // fmt::print("dt: {}\n", dt);
 
          static auto prev_time = esp_timer_get_time();
          auto time = esp_timer_get_time();
          float dt = (time - prev_time) / 1'000'000.0f; // convert us to s
          prev_time = time;
 
-         // fmt::print("dt: {}\n", dt);
+         // get the obstacle position (where the user is touching)
+         espp::Vector2f obstacle_pos{};
+         {
+           std::lock_guard<std::mutex> lock(touch_mutex);
+           // get obstacle position
+           obstacle_pos = touch_pos;
+           // invert the y position
+           obstacle_pos.y(lcd_height - obstacle_pos.y());
+           // convert to sim coordinates
+           obstacle_pos /= spacing;
+           if (new_touch) {
+             // TODO: get obstacle velocity
+             fluid->set_obstacle(obstacle_pos.x(), obstacle_pos.y(), obstacle_radius, false, dt);
+           }
+           new_touch = false;
+         }
 
          // update the fluid sim
-         static constexpr float g = -9.81;
-         static constexpr float flip_ratio = 0.9;
-         static constexpr int num_pressure_iters = 50;
-         static constexpr int num_particle_iters = 2;
-         static constexpr float over_relaxation = 1.9;
-         static constexpr bool compensate_drift = true;
-         static constexpr bool separate_particles = true;
-         static constexpr float obstacle_radius = 10.0f;
          fluid->simulate(dt, g, flip_ratio, num_pressure_iters, num_particle_iters, over_relaxation,
                          compensate_drift, separate_particles, obstacle_pos.x(), obstacle_pos.y(),
                          obstacle_radius);
@@ -261,12 +276,7 @@ extern "C" void app_main(void) {
            return false;
          }
          // clear the frame buffer
-         static constexpr int framebuffer_size =
-             box.lcd_width() * box.lcd_height() * sizeof(uint16_t);
          memset(framebuffer, 0, framebuffer_size);
-
-         static constexpr int lcd_width = box.lcd_width();
-         static constexpr int lcd_height = box.lcd_height();
 
          // render to the active frame buffer
          for (int i = 0; i < fluid->numParticles; i++) {

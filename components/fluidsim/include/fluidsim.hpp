@@ -6,6 +6,8 @@
 #include <cstdint>
 #include <vector>
 
+#include "fast_math.hpp"
+
 /// This file contains a simple FLIP fluid simulation implementation. It is
 /// based on the presentation / video by Matthias Müller-Fischer:
 /// - https://youtu.be/XmzBREkK8kY
@@ -135,8 +137,9 @@ public:
               float d2 = dx * dx + dy * dy;
               if (d2 > minDist2 || d2 == 0.0f)
                 continue;
-              float d = std::sqrt(d2);
-              float s = 0.5f * (minDist - d) / d;
+              float inv_d = espp::fast_inv_sqrt(d2);
+              float d = 1.0f / inv_d;
+              float s = 0.5f * (minDist - d) * inv_d;
               dx *= s;
               dy *= s;
               particlePos[2 * i] -= dx;
@@ -182,9 +185,9 @@ public:
 
       // obstacle collision
       if (d2 < minDist2) {
-        // TODO: obstacle collision velocity response
-        // particleVel[2 * i] = scene.obstacleVelX;
-        // particleVel[2 * i + 1] = scene.obstacleVelY;
+        // obstacle collision velocity response
+        particleVel[2 * i] = obstacle_velX;
+        particleVel[2 * i + 1] = obstacle_velY;
       }
 
       // wall collisions
@@ -530,6 +533,43 @@ public:
     }
   }
 
+  void set_obstacle(float x, float y, float radius, bool reset, float dt) {
+    float vx = 0.0;
+    float vy = 0.0;
+
+    if (!reset) {
+      vx = (x - prev_obstacleX) / dt;
+      vy = (y - prev_obstacleY) / dt;
+    }
+
+    prev_obstacleX = x;
+    prev_obstacleY = y;
+    float r = radius;
+    int n = fNumY;
+    // float cd = 1.0f / espp::fast_inv_sqrt(2) * h;
+
+    for (int i = 1; i < fNumX - 2; i++) {
+      for (int j = 1; j < fNumY - 2; j++) {
+
+        s[i * n + j] = 1.0;
+
+        float dx = (i + 0.5) * h - x;
+        float dy = (j + 0.5) * h - y;
+
+        if (dx * dx + dy * dy < r * r) {
+          s[i * n + j] = 0.0;
+          u[i * n + j] = vx;
+          u[(i + 1) * n + j] = vx;
+          v[i * n + j] = vy;
+          v[i * n + j + 1] = vy;
+        }
+      }
+    }
+
+    obstacle_velX = vx;
+    obstacle_velY = vy;
+  }
+
   void simulate(float dt, float gravity, float flipRatio, int numPressureIters,
                 int numParticleIters, float overRelaxation, bool compensateDrift,
                 bool separateParticles, float obstacleX, float obstacleY, float obstacleRadius) {
@@ -551,6 +591,13 @@ public:
     updateCellColors();
   }
 
+  // Added:
+  float prev_obstacleX = 0.0f;
+  float prev_obstacleY = 0.0f;
+  float obstacle_velX = 0.0f;
+  float obstacle_velY = 0.0f;
+
+  // Original:
   float density;
   int fNumX, fNumY;
   float h, fInvSpacing;
