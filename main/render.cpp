@@ -20,19 +20,19 @@ bool initialize_render() {
   video_task = espp::Task::make_unique({
       .callback = std::bind(video_task_callback, _1, _2, _3),
       .task_config =
-          {.name = "video task", .stack_size_bytes = 4 * 1024, .priority = 20, .core_id = 1},
+          {.name = "video task", .stack_size_bytes = 4 * 1024, .priority = 20, .core_id = 0},
   });
   video_task->start();
 
   return true;
 }
 
-void IRAM_ATTR push_frame(const void *frame) {
+bool IRAM_ATTR push_frame(const void *frame) {
   if (video_queue == nullptr) {
     logger.error("video queue is null, make sure to call initialize_video() first!");
-    return;
+    return false;
   }
-  xQueueSend(video_queue, &frame, 0);
+  return xQueueSend(video_queue, &frame, 0) == pdTRUE;
 }
 
 bool video_task_callback(std::mutex &m, std::condition_variable &cv, bool &task_notified) {

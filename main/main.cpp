@@ -160,15 +160,15 @@ extern "C" void app_main(void) {
 
   // now make the fluid sim
   static constexpr float density = 1000.0f;
-  static constexpr int sim_width = box.lcd_width() / 2;
-  static constexpr int sim_height = box.lcd_height() / 2;
-  static constexpr int resolution = 20;
+  static constexpr int sim_width = box.lcd_width();
+  static constexpr int sim_height = box.lcd_height();
+  static constexpr int resolution = 50;
   static constexpr float spacing = sim_height / resolution;
   static constexpr float particle_radius = spacing * 0.3;
   float dx = 2.0 * particle_radius;
   float dy = sqrt(3.0) / 2.0 * dx;
-  float relWaterWidth = 0.5;
-  float relWaterHeight = 0.5;
+  float relWaterWidth = 0.2;
+  float relWaterHeight = 0.8;
   int numX = floor((relWaterWidth * sim_width - 2.0 * spacing - 2.0 * particle_radius) / dx);
   int numY = floor((relWaterHeight * sim_height - 2.0 * spacing - 2.0 * particle_radius) / dy);
   int max_particles = numX * numY;
@@ -202,8 +202,9 @@ extern "C" void app_main(void) {
   }
 
   // now make a task to update the fluid sim
-  espp::Task fluid_task(
-      {.callback = [&touch_pos, &touch_mutex, &gravity, &gravity_mutex, &fluid]() -> bool {
+  espp::Timer fluid_timer(
+      {.period = 10ms,
+       .callback = [&touch_pos, &touch_mutex, &gravity, &gravity_mutex, &fluid]() -> bool {
          // get the gravity vector
          std::array<float, 3> gravity_vector{};
          {
@@ -225,7 +226,7 @@ extern "C" void app_main(void) {
          float dt = (time - prev_time) / 1'000'000.0f; // convert us to s
          prev_time = time;
 
-         // fmt::print("dt: {}\n", dt);
+         fmt::print("dt: {}\n", dt);
 
          // update the fluid sim
          static constexpr float g = -9.81;
@@ -239,8 +240,6 @@ extern "C" void app_main(void) {
          fluid->simulate(dt, g, flip_ratio, num_pressure_iters, num_particle_iters, over_relaxation,
                          compensate_drift, separate_particles, obstacle_pos.x(), obstacle_pos.y(),
                          obstacle_radius);
-
-         // render the fluid
 
          // ping pong between the two full frame buffers
          static int current_buffer = 0;
@@ -276,25 +275,31 @@ extern "C" void app_main(void) {
            int y0 = std::max(0, std::min(lcd_height - 1, (int)(y - particle_radius)));
            int y1 = std::max(0, std::min(lcd_height - 1, (int)(y + particle_radius)));
 
+           uint16_t color = lv_color_to_u16(lv_color_make(red, green, blue));
+
            for (int j = y0; j <= y1; j++) {
              for (int i = x0; i <= x1; i++) {
-               framebuffer[j * lcd_width + i] = lv_color_to_u16(lv_color_make(red, green, blue));
+               framebuffer[j * lcd_width + i] = color;
              }
            }
          }
 
          // then push the frame to the render task using push_frame
-         push_frame(framebuffer);
+         if (!push_frame(framebuffer)) {
+           fmt::print("Failed to push frame to render task!\n");
+         }
 
          return false;
        },
-       .task_config = {
-           .name = "Fluid",
-           .stack_size_bytes = 6 * 1024,
-           .priority = 10,
-           .core_id = 1,
-       }});
-  fluid_task.start();
+       .auto_start = true,
+       .task_config =
+           {
+               .name = "Fluid",
+               .stack_size_bytes = 6 * 1024,
+               .priority = 10,
+               .core_id = 1,
+           },
+       .log_level = espp::Logger::Verbosity::ERROR});
 
   // loop forever
   while (true) {
