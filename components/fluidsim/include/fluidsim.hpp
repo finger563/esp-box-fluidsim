@@ -6,10 +6,6 @@
 #include <cstdint>
 #include <vector>
 
-#include "color.hpp"
-#include "fast_math.hpp"
-#include "vector2d.hpp"
-
 /// This file contains a simple FLIP fluid simulation implementation. It is
 /// based on the presentation / video by Matthias Müller-Fischer:
 /// - https://youtu.be/XmzBREkK8kY

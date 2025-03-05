@@ -4,25 +4,13 @@ Example repository using espp components to have an interactive fluid simulation
 on the ESP32-S3-BOX and ESP32-S3-BOX-3, using the IMU to measure the gravity
 vector and using the touchscreen for other fluid interactions.
 
-## Development
-
-This repository is designed to be used as a template repository - so you can
-sepcify this as the template repository type when creating a new repository on
-GitHub.
-
-After setting this as the template, make sure to update the following:
-- The [./main/main.cpp](./main/main.cpp) To run the main code for your app. The
-  [main folder](./main) is also where you can put additional header and source
-  files that you don't think belong in their own components but help keep the
-  main code clean.
-
 ## Cloning
 
 Since this repo contains a submodule, you need to make sure you clone it
 recursively, e.g. with:
 
 ``` sh
-git clone --recurse-submodules <your repo name>
+git clone --recurse-submodules https://github.com/finger563/esp-box-fluidsim
 ```
 
 Alternatively, you can always ensure the submodules are up to date after cloning
