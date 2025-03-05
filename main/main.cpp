@@ -24,7 +24,7 @@ extern "C" void app_main(void) {
 
   // mutex for the touch position
   std::mutex touch_mutex;
-  espp::Vector2f touch_pos{};
+  espp::Vector2f touch_pos{box.lcd_width() / 2, box.lcd_height() / 2};
   bool new_touch = false;
 
   auto touch_callback = [&](const auto &touch) {
@@ -221,7 +221,18 @@ extern "C" void app_main(void) {
     }
   }
 
-  fluid->set_obstacle(10, 10, obstacle_radius, true, 0);
+  espp::Vector2f obstacle_pos{};
+  {
+    std::lock_guard<std::mutex> lock(touch_mutex);
+    // get obstacle position
+    obstacle_pos = touch_pos;
+  }
+  // invert the y position
+  obstacle_pos.y(lcd_height - obstacle_pos.y());
+  // convert to sim coordinates
+  obstacle_pos /= spacing;
+  // tell the sim where the obstacle is
+  fluid->set_obstacle(obstacle_pos.x(), obstacle_pos.y(), obstacle_radius, true, 0);
 
   // now make a task to update the fluid sim
   espp::Timer fluid_timer(
@@ -248,21 +259,19 @@ extern "C" void app_main(void) {
            std::lock_guard<std::mutex> lock(touch_mutex);
            // get obstacle position
            obstacle_pos = touch_pos;
-           // invert the y position
-           obstacle_pos.y(lcd_height - obstacle_pos.y());
-           // convert to sim coordinates
-           obstacle_pos /= spacing;
-           if (new_touch) {
-             // TODO: get obstacle velocity
-             fluid->set_obstacle(obstacle_pos.x(), obstacle_pos.y(), obstacle_radius, false, dt);
-           }
            new_touch = false;
          }
+         // invert the y position
+         obstacle_pos.y(lcd_height - obstacle_pos.y());
+         // convert to sim coordinates
+         obstacle_pos /= spacing;
+         // tell the sim where the obstacle is
+         fluid->set_obstacle(obstacle_pos.x(), obstacle_pos.y(), obstacle_radius, false, dt);
 
          // update the fluid sim
-         fluid->simulate(dt, g, flip_ratio, num_pressure_iters, num_particle_iters, over_relaxation,
-                         compensate_drift, separate_particles, obstacle_pos.x(), obstacle_pos.y(),
-                         obstacle_radius);
+         fluid->simulate(2 * dt, g, flip_ratio, num_pressure_iters, num_particle_iters,
+                         over_relaxation, compensate_drift, separate_particles, obstacle_pos.x(),
+                         obstacle_pos.y(), obstacle_radius);
 
          // ping pong between the two full frame buffers
          static int current_buffer = 0;
@@ -277,6 +286,24 @@ extern "C" void app_main(void) {
          }
          // clear the frame buffer
          memset(framebuffer, 0, framebuffer_size);
+
+         // draw the obstacle as a circle
+         {
+           float render_pos_x = obstacle_pos.x() * spacing;
+           float render_pos_y = lcd_height - obstacle_pos.y() * spacing;
+           int x0 = std::max(0, std::min(lcd_width - 1, (int)(render_pos_x - obstacle_radius)));
+           int x1 = std::max(0, std::min(lcd_width - 1, (int)(render_pos_x + obstacle_radius)));
+           int y0 = std::max(0, std::min(lcd_height - 1, (int)(render_pos_y - obstacle_radius)));
+           int y1 = std::max(0, std::min(lcd_height - 1, (int)(render_pos_y + obstacle_radius)));
+
+           uint16_t color = lv_color_to_u16(lv_color_make(255, 255, 255));
+
+           for (int j = y0; j <= y1; j++) {
+             for (int i = x0; i <= x1; i++) {
+               framebuffer[j * lcd_width + i] = color;
+             }
+           }
+         }
 
          // render to the active frame buffer
          for (int i = 0; i < fluid->numParticles; i++) {
