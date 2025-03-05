@@ -83,51 +83,51 @@ extern "C" void app_main(void) {
 
   // make a task to read out the IMU data and print it to console
   using namespace std::chrono_literals;
-  espp::Timer imu_timer(
-      {.period = 10ms,
-          .callback = []() -> bool {
-            static auto &box = espp::EspBox::get();
-            static auto imu = box.imu();
+  espp::Timer imu_timer({.period = 10ms,
+                         .callback = []() -> bool {
+                           static auto &box = espp::EspBox::get();
+                           static auto imu = box.imu();
 
-            auto now = esp_timer_get_time(); // time in microseconds
-            static auto t0 = now;
-            auto t1 = now;
-            float dt = (t1 - t0) / 1'000'000.0f; // convert us to s
-            t0 = t1;
+                           auto now = esp_timer_get_time(); // time in microseconds
+                           static auto t0 = now;
+                           auto t1 = now;
+                           float dt = (t1 - t0) / 1'000'000.0f; // convert us to s
+                           t0 = t1;
 
-            std::error_code ec;
-            // get imu data
-            auto accel = imu->get_accelerometer(ec);
-            auto gyro = imu->get_gyroscope(ec);
-            auto temp = imu->get_temperature(ec);
+                           std::error_code ec;
+                           // get imu data
+                           auto accel = imu->get_accelerometer(ec);
+                           auto gyro = imu->get_gyroscope(ec);
+                           auto temp = imu->get_temperature(ec);
 
-            // with only the accelerometer + gyroscope, we can't get yaw :(
-            float roll = 0, pitch = 0, yaw = 0; // NOTE:yaw is unused
-            static constexpr float beta = 0.1f; // higher = more accelerometer, lower = more gyro
-            static espp::MadgwickFilter f(beta);
+                           // with only the accelerometer + gyroscope, we can't get yaw :(
+                           float roll = 0, pitch = 0, yaw = 0; // NOTE:yaw is unused
+                           static constexpr float beta =
+                               0.1f; // higher = more accelerometer, lower = more gyro
+                           static espp::MadgwickFilter f(beta);
 
-            // update the state
-            f.update(dt, accel.x, accel.y, accel.z, gyro.x * M_PI / 180.0f, gyro.y * M_PI / 180.0f,
-                     gyro.z * M_PI / 180.0f);
-            f.get_euler(roll, pitch, yaw);
-            pitch *= M_PI / 180.0f;
-            roll *= M_PI / 180.0f;
+                           // update the state
+                           f.update(dt, accel.x, accel.y, accel.z, gyro.x * M_PI / 180.0f,
+                                    gyro.y * M_PI / 180.0f, gyro.z * M_PI / 180.0f);
+                           f.get_euler(roll, pitch, yaw);
+                           pitch *= M_PI / 180.0f;
+                           roll *= M_PI / 180.0f;
 
-            // compute the gravity vector
-            float vx = sin(pitch);
-            float vy = -cos(pitch) * sin(roll);
-            float vz = -cos(pitch) * cos(roll);
+                           // compute the gravity vector
+                           float vx = sin(pitch);
+                           float vy = -cos(pitch) * sin(roll);
+                           float vz = -cos(pitch) * cos(roll);
 
-            // TODO: provide the updated gravity vector to the fluid sim
+                           // TODO: provide the updated gravity vector to the fluid sim
 
-            return false;
-          },
-          .task_config = {
-            .name = "IMU",
-            .stack_size_bytes = 6 * 1024,
-            .priority = 10,
-            .core_id = 0,
-          }});
+                           return false;
+                         },
+                         .task_config = {
+                             .name = "IMU",
+                             .stack_size_bytes = 6 * 1024,
+                             .priority = 10,
+                             .core_id = 0,
+                         }});
   imu_timer.start();
 
   // loop forever
