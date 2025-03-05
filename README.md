@@ -1,7 +1,8 @@
-# ESP++ Template
+# ESP-BOX Fluidsim
 
-Template repository for building an ESP app with ESP++ (espp) components and
-ESP-IDF components.
+Example repository using espp components to have an interactive fluid simulation
+on the ESP32-S3-BOX and ESP32-S3-BOX-3, using the IMU to measure the gravity
+vector and using the touchscreen for other fluid interactions.
 
 ## Development
 
@@ -10,20 +11,10 @@ sepcify this as the template repository type when creating a new repository on
 GitHub.
 
 After setting this as the template, make sure to update the following:
-- [This README](./README.md) to contain the relevant description and images of your project
-- The [./CMakeLists.txt](./CMakeLists.txt) file to have the components that you
-  want to use (and any you may have added to the [components
-  folder](./components)) as well as to update the project name
 - The [./main/main.cpp](./main/main.cpp) To run the main code for your app. The
   [main folder](./main) is also where you can put additional header and source
   files that you don't think belong in their own components but help keep the
   main code clean.
-- Update the [./.github/workflows/build.yml](./.github/workflows/build.yml) file
-  to have the correct target architecture (e.g. `esp32s3`) for your project.
-- Enable `Read and Write permissions` under `Workflow Permissions` on the
-  `Settings->Actions` subpage of the repository. that will allow the static
-  analysis tool to put its results into a comment on any pull requests in your
-  repository.
 
 ## Cloning
 
