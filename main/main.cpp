@@ -160,24 +160,24 @@ extern "C" void app_main(void) {
 
   // now make the fluid sim
   static constexpr float density = 1000.0f;
-  static constexpr int width = box.lcd_width();
-  static constexpr int height = box.lcd_height();
-  static constexpr int resolution = 10;
-  static constexpr float spacing = height / resolution;
+  static constexpr int sim_width = box.lcd_width() / 2;
+  static constexpr int sim_height = box.lcd_height() / 2;
+  static constexpr int resolution = 20;
+  static constexpr float spacing = sim_height / resolution;
   static constexpr float particle_radius = spacing * 0.3;
   float dx = 2.0 * particle_radius;
   float dy = sqrt(3.0) / 2.0 * dx;
-  float relWaterWidth = 0.8;
-  float relWaterHeight = 0.8;
-  int numX = floor((relWaterWidth * width - 2.0 * spacing - 2.0 * particle_radius) / dx);
-  int numY = floor((relWaterHeight * height - 2.0 * spacing - 2.0 * particle_radius) / dy);
+  float relWaterWidth = 0.5;
+  float relWaterHeight = 0.5;
+  int numX = floor((relWaterWidth * sim_width - 2.0 * spacing - 2.0 * particle_radius) / dx);
+  int numY = floor((relWaterHeight * sim_height - 2.0 * spacing - 2.0 * particle_radius) / dy);
   int max_particles = numX * numY;
 
   // static constexpr int numX = width / spacing;
   // static constexpr int max_particles = 100;
 
   std::shared_ptr<fluid::FlipFluid> fluid = std::make_shared<fluid::FlipFluid>(
-      density, width, height, spacing, particle_radius, max_particles);
+      density, sim_width, sim_height, spacing, particle_radius, max_particles);
 
   // create particles
   fluid->numParticles = numX * numY;
@@ -240,7 +240,7 @@ extern "C" void app_main(void) {
                          compensate_drift, separate_particles, obstacle_pos.x(), obstacle_pos.y(),
                          obstacle_radius);
 
-         // TODO: render the fluid
+         // render the fluid
 
          // ping pong between the two full frame buffers
          static int current_buffer = 0;
@@ -258,24 +258,27 @@ extern "C" void app_main(void) {
              box.lcd_width() * box.lcd_height() * sizeof(uint16_t);
          memset(framebuffer, 0, framebuffer_size);
 
+         static constexpr int lcd_width = box.lcd_width();
+         static constexpr int lcd_height = box.lcd_height();
+
          // render to the active frame buffer
          for (int i = 0; i < fluid->numParticles; i++) {
            float x = fluid->particlePos[2 * i];
-           float y = fluid->particlePos[2 * i + 1];
+           float y = lcd_height - fluid->particlePos[2 * i + 1];
 
            uint8_t red = fluid->particleColor[3 * i] * 255;
            uint8_t green = fluid->particleColor[3 * i + 1] * 255;
            uint8_t blue = fluid->particleColor[3 * i + 2] * 255;
 
            // for now simply draw a box where the particle is
-           int x0 = std::max(0, std::min(width - 1, (int)(x - particle_radius)));
-           int x1 = std::max(0, std::min(width - 1, (int)(x + particle_radius)));
-           int y0 = std::max(0, std::min(height - 1, (int)(y - particle_radius)));
-           int y1 = std::max(0, std::min(height - 1, (int)(y + particle_radius)));
+           int x0 = std::max(0, std::min(lcd_width - 1, (int)(x - particle_radius)));
+           int x1 = std::max(0, std::min(lcd_width - 1, (int)(x + particle_radius)));
+           int y0 = std::max(0, std::min(lcd_height - 1, (int)(y - particle_radius)));
+           int y1 = std::max(0, std::min(lcd_height - 1, (int)(y + particle_radius)));
 
            for (int j = y0; j <= y1; j++) {
              for (int i = x0; i <= x1; i++) {
-               framebuffer[j * width + i] = lv_color_to_u16(lv_color_make(red, green, blue));
+               framebuffer[j * lcd_width + i] = lv_color_to_u16(lv_color_make(red, green, blue));
              }
            }
          }
