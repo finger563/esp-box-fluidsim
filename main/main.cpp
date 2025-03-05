@@ -160,9 +160,9 @@ extern "C" void app_main(void) {
 
   // now make the fluid sim
   static constexpr float density = 1000.0f;
-  static constexpr int sim_width = box.lcd_width();
-  static constexpr int sim_height = box.lcd_height();
-  static constexpr int resolution = 50;
+  static constexpr int sim_width = box.lcd_width() / 2;
+  static constexpr int sim_height = box.lcd_height() / 2;
+  static constexpr int resolution = 40;
   static constexpr float spacing = sim_height / resolution;
   static constexpr float particle_radius = spacing * 0.3;
   float dx = 2.0 * particle_radius;
@@ -175,6 +175,14 @@ extern "C" void app_main(void) {
 
   // static constexpr int numX = width / spacing;
   // static constexpr int max_particles = 100;
+
+  logger.info("Creating fluid sim\n"
+              "\t{} particles\n"
+              "\t{} width, {} height\n"
+              "\t{} x, {} y\n"
+              "\t{} particle radius\n"
+              "\t{} spacing",
+              max_particles, sim_width, sim_height, numX, numY, particle_radius, spacing);
 
   std::shared_ptr<fluid::FlipFluid> fluid = std::make_shared<fluid::FlipFluid>(
       density, sim_width, sim_height, spacing, particle_radius, max_particles);
@@ -226,7 +234,7 @@ extern "C" void app_main(void) {
          float dt = (time - prev_time) / 1'000'000.0f; // convert us to s
          prev_time = time;
 
-         fmt::print("dt: {}\n", dt);
+         // fmt::print("dt: {}\n", dt);
 
          // update the fluid sim
          static constexpr float g = -9.81;
@@ -262,8 +270,8 @@ extern "C" void app_main(void) {
 
          // render to the active frame buffer
          for (int i = 0; i < fluid->numParticles; i++) {
-           float x = fluid->particlePos[2 * i];
-           float y = lcd_height - fluid->particlePos[2 * i + 1];
+           float x = fluid->particlePos[2 * i] * spacing;
+           float y = lcd_height - fluid->particlePos[2 * i + 1] * spacing;
 
            uint8_t red = fluid->particleColor[3 * i] * 255;
            uint8_t green = fluid->particleColor[3 * i + 1] * 255;
@@ -286,7 +294,7 @@ extern "C" void app_main(void) {
 
          // then push the frame to the render task using push_frame
          if (!push_frame(framebuffer)) {
-           fmt::print("Failed to push frame to render task!\n");
+           // fmt::print("Failed to push frame to render task!\n");
          }
 
          return false;
