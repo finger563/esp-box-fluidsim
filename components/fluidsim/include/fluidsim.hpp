@@ -60,9 +60,10 @@ public:
       , cellParticleIds(maxParticles)
       , numParticles(0) {}
 
-  void integrateParticles(float dt, float gravity) {
+  void integrateParticles(float dt, float gravityX, float gravityY) {
     for (int i = 0; i < numParticles; i++) {
-      particleVel[2 * i + 1] += dt * gravity;
+      particleVel[2 * i] += dt * gravityX;
+      particleVel[2 * i + 1] += dt * gravityY;
       particlePos[2 * i] += particleVel[2 * i] * dt;
       particlePos[2 * i + 1] += particleVel[2 * i + 1] * dt;
     }
@@ -570,14 +571,14 @@ public:
     obstacle_velY = vy;
   }
 
-  void simulate(float dt, float gravity, float flipRatio, int numPressureIters,
+  void simulate(float dt, float gravityX, float gravityY, float flipRatio, int numPressureIters,
                 int numParticleIters, float overRelaxation, bool compensateDrift,
                 bool separateParticles, float obstacleX, float obstacleY, float obstacleRadius) {
     int numSubSteps = 1;
     float sdt = dt / numSubSteps;
 
     for (int step = 0; step < numSubSteps; step++) {
-      integrateParticles(sdt, gravity);
+      integrateParticles(sdt, gravityX, gravityY);
       if (separateParticles)
         pushParticlesApart(numParticleIters);
       handleParticleCollisions(obstacleX, obstacleY, obstacleRadius);

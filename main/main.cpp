@@ -269,9 +269,12 @@ extern "C" void app_main(void) {
          fluid->set_obstacle(obstacle_pos.x(), obstacle_pos.y(), obstacle_radius, false, dt);
 
          // update the fluid sim
-         fluid->simulate(2 * dt, g, flip_ratio, num_pressure_iters, num_particle_iters,
-                         over_relaxation, compensate_drift, separate_particles, obstacle_pos.x(),
-                         obstacle_pos.y(), obstacle_radius);
+         fluid->simulate(
+             2 * dt,
+             -g * gravity_vector[0], // NOTE: we invert the x to match the simulation coords
+             g * gravity_vector[1], flip_ratio, num_pressure_iters, num_particle_iters,
+             over_relaxation, compensate_drift, separate_particles, obstacle_pos.x(),
+             obstacle_pos.y(), obstacle_radius);
 
          // ping pong between the two full frame buffers
          static int current_buffer = 0;
