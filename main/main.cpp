@@ -9,6 +9,7 @@
 #include "vector2d.hpp"
 
 #include "fluidsim.hpp"
+#include "render.hpp"
 
 using namespace std::chrono_literals;
 
@@ -73,6 +74,17 @@ extern "C" void app_main(void) {
     logger.error("Failed to initialize display!");
     return;
   }
+  // NOTE: we pause the display here so that the lvgl display task does not run.
+  // We will manually draw to the screen and bypass lvgl for this demo.
+  auto display = box.display();
+  display->pause();
+
+  // start the render task
+  if (!initialize_render()) {
+    logger.error("Failed to initialize render!");
+    return;
+  }
+
   // initialize the touchpad
   if (!box.initialize_touch(touch_callback)) {
     logger.error("Failed to initialize touchpad!");
@@ -213,7 +225,7 @@ extern "C" void app_main(void) {
          float dt = (time - prev_time) / 1'000'000.0f; // convert us to s
          prev_time = time;
 
-         fmt::print("dt: {}\n", dt);
+         // fmt::print("dt: {}\n", dt);
 
          // update the fluid sim
          static constexpr float g = -9.81;
@@ -229,6 +241,47 @@ extern "C" void app_main(void) {
                          obstacle_radius);
 
          // TODO: render the fluid
+
+         // ping pong between the two full frame buffers
+         static int current_buffer = 0;
+         static auto &box = espp::EspBox::get();
+         static uint16_t *framebuffers[2] = {(uint16_t *)box.frame_buffer0(),
+                                             (uint16_t *)box.frame_buffer1()};
+         uint16_t *framebuffer = framebuffers[current_buffer];
+         current_buffer = current_buffer ? 0 : 1;
+         if (!framebuffer) {
+           fmt::print("No framebuffer, make sure you have SPIRAM enabled!\n");
+           return false;
+         }
+         // clear the frame buffer
+         static constexpr int framebuffer_size =
+             box.lcd_width() * box.lcd_height() * sizeof(uint16_t);
+         memset(framebuffer, 0, framebuffer_size);
+
+         // render to the active frame buffer
+         for (int i = 0; i < fluid->numParticles; i++) {
+           float x = fluid->particlePos[2 * i];
+           float y = fluid->particlePos[2 * i + 1];
+
+           uint8_t red = fluid->particleColor[3 * i] * 255;
+           uint8_t green = fluid->particleColor[3 * i + 1] * 255;
+           uint8_t blue = fluid->particleColor[3 * i + 2] * 255;
+
+           // for now simply draw a box where the particle is
+           int x0 = std::max(0, std::min(width - 1, (int)(x - particle_radius)));
+           int x1 = std::max(0, std::min(width - 1, (int)(x + particle_radius)));
+           int y0 = std::max(0, std::min(height - 1, (int)(y - particle_radius)));
+           int y1 = std::max(0, std::min(height - 1, (int)(y + particle_radius)));
+
+           for (int j = y0; j <= y1; j++) {
+             for (int i = x0; i <= x1; i++) {
+               framebuffer[j * width + i] = lv_color_to_u16(lv_color_make(red, green, blue));
+             }
+           }
+         }
+
+         // then push the frame to the render task using push_frame
+         push_frame(framebuffer);
 
          return false;
        },
