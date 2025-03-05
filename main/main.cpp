@@ -7,6 +7,8 @@
 #include "madgwick_filter.hpp"
 #include "timer.hpp"
 
+#include "fluidsim.hpp"
+
 using namespace std::chrono_literals;
 
 extern "C" void app_main(void) {
