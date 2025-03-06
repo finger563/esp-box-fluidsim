@@ -124,9 +124,9 @@ public:
         for (int xi = x0; xi <= x1; xi++) {
           for (int yi = y0; yi <= y1; yi++) {
             int cellNr = xi * pNumY + yi;
-            int first = firstCellParticle[cellNr];
-            int last = firstCellParticle[cellNr + 1];
-            for (int j = first; j < last; j++) {
+            int firstP = firstCellParticle[cellNr];
+            int lastP = firstCellParticle[cellNr + 1];
+            for (int j = firstP; j < lastP; j++) {
               int id = cellParticleIds[j];
               if (id == i)
                 continue;
@@ -140,9 +140,9 @@ public:
                 continue;
               float inv_d = espp::fast_inv_sqrt(d2);
               float d = 1.0f / inv_d;
-              float s = 0.5f * (minDist - d) * inv_d;
-              dx *= s;
-              dy *= s;
+              float s_ = 0.5f * (minDist - d) * inv_d;
+              dx *= s_;
+              dy *= s_;
               particlePos[2 * i] -= dx;
               particlePos[2 * i + 1] -= dy;
               particlePos[2 * id] += dx;
@@ -164,17 +164,17 @@ public:
   }
 
   void handleParticleCollisions(float obstacleX, float obstacleY, float obstacleRadius) {
-    float h = 1.0f / fInvSpacing;
+    float h_ = 1.0f / fInvSpacing;
     float r = particleRadius;
-    float or_ = obstacleRadius;
+    // float or_ = obstacleRadius;
     // float or2 = or_ * or_;
     float minDist = obstacleRadius + r;
     float minDist2 = minDist * minDist;
 
-    float minX = h + r;
-    float maxX = (fNumX - 1) * h - r;
-    float minY = h + r;
-    float maxY = (fNumY - 1) * h - r;
+    float minX = h_ + r;
+    float maxX = (fNumX - 1) * h_ - r;
+    float minY = h_ + r;
+    float maxY = (fNumY - 1) * h_ - r;
 
     for (int i = 0; i < numParticles; i++) {
       float x = particlePos[2 * i];
@@ -215,9 +215,9 @@ public:
 
   void updateParticleDensity() {
     float n = fNumY;
-    float h = this->h;
+    float h_ = this->h;
     float h1 = fInvSpacing;
-    float h2 = 0.5f * h;
+    float h2 = 0.5f * h_;
 
     std::fill(particleDensity.begin(), particleDensity.end(), 0.0f);
 
@@ -225,15 +225,15 @@ public:
       float x = particlePos[2 * i];
       float y = particlePos[2 * i + 1];
 
-      x = std::clamp(x, h, (fNumX - 1) * h);
-      y = std::clamp(y, h, (fNumY - 1) * h);
+      x = std::clamp(x, h_, (fNumX - 1) * h_);
+      y = std::clamp(y, h_, (fNumY - 1) * h_);
 
       int x0 = std::floor((x - h2) * h1);
-      float tx = ((x - h2) - x0 * h) * h1;
+      float tx = ((x - h2) - x0 * h_) * h1;
       int x1 = std::min(x0 + 1, fNumX - 2);
 
       int y0 = std::floor((y - h2) * h1);
-      float ty = ((y - h2) - y0 * h) * h1;
+      float ty = ((y - h2) - y0 * h_) * h1;
       int y1 = std::min(y0 + 1, fNumY - 2);
 
       float sx = 1.0f - tx;
@@ -267,9 +267,9 @@ public:
 
   void transferVelocities(bool toGrid, float flipRatio) {
     float n = fNumY;
-    float h = this->h;
+    float h_ = this->h;
     float h1 = fInvSpacing;
-    float h2 = 0.5f * h;
+    float h2 = 0.5f * h_;
 
     if (toGrid) {
       prevU = u;
@@ -306,15 +306,15 @@ public:
         float x = particlePos[2 * i];
         float y = particlePos[2 * i + 1];
 
-        x = std::clamp(x, h, (fNumX - 1) * h);
-        y = std::clamp(y, h, (fNumY - 1) * h);
+        x = std::clamp(x, h_, (fNumX - 1) * h_);
+        y = std::clamp(y, h_, (fNumY - 1) * h_);
 
         int x0 = std::min(static_cast<int>((x - dx) * h1), fNumX - 2);
-        float tx = ((x - dx) - x0 * h) * h1;
+        float tx = ((x - dx) - x0 * h_) * h1;
         int x1 = std::min(x0 + 1, fNumX - 2);
 
         int y0 = std::min(static_cast<int>((y - dy) * h1), fNumY - 2);
-        float ty = ((y - dy) - y0 * h) * h1;
+        float ty = ((y - dy) - y0 * h_) * h1;
         int y1 = std::min(y0 + 1, fNumY - 2);
 
         float sx = 1.0f - tx;
@@ -355,18 +355,18 @@ public:
                              ? 1.0f
                              : 0.0f;
 
-          float v = particleVel[2 * i + component];
-          float d = valid0 * d0 + valid1 * d1 + valid2 * d2 + valid3 * d3;
+          float d_ = valid0 * d0 + valid1 * d1 + valid2 * d2 + valid3 * d3;
 
-          if (d > 0.0f) {
+          if (d_ > 0.0f) {
+            float vel = particleVel[2 * i + component];
             float picV = (valid0 * d0 * f[nr0] + valid1 * d1 * f[nr1] + valid2 * d2 * f[nr2] +
                           valid3 * d3 * f[nr3]) /
-                         d;
+                         d_;
             float corr =
                 (valid0 * d0 * (f[nr0] - prevF[nr0]) + valid1 * d1 * (f[nr1] - prevF[nr1]) +
                  valid2 * d2 * (f[nr2] - prevF[nr2]) + valid3 * d3 * (f[nr3] - prevF[nr3])) /
-                d;
-            float flipV = v + corr;
+                d_;
+            float flipV = vel + corr;
 
             particleVel[2 * i + component] = (1.0f - flipRatio) * picV + flipRatio * flipV;
           }
@@ -424,27 +424,28 @@ public:
           float sx1 = this->s[right];
           float sy0 = this->s[bottom];
           float sy1 = this->s[top];
-          float s = sx0 + sx1 + sy0 + sy1;
-          if (s == 0.0f)
+          float s_ = sx0 + sx1 + sy0 + sy1;
+          if (s_ == 0.0f)
             continue;
 
           float div = this->u[right] - this->u[center] + this->v[top] - this->v[center];
 
           if (particleRestDensity > 0.0f && compensateDrift) {
-            float k = 1.0f;
             float compression = particleDensity[i * n + j] - particleRestDensity;
-            if (compression > 0.0f)
+            if (compression > 0.0f) {
+              float k = 1.0f;
               div = div - k * compression;
+            }
           }
 
-          float p = -div / s;
-          p *= overRelaxation;
-          this->p[center] += cp * p;
+          float p_ = -div / s_;
+          p_ *= overRelaxation;
+          this->p[center] += cp * p_;
 
-          this->u[center] -= sx0 * p;
-          this->u[right] += sx1 * p;
-          this->v[center] -= sy0 * p;
-          this->v[top] += sy1 * p;
+          this->u[center] -= sx0 * p_;
+          this->u[right] += sx1 * p_;
+          this->v[center] -= sy0 * p_;
+          this->v[top] += sy1 * p_;
         }
       }
     }
@@ -454,11 +455,11 @@ public:
     float h1 = fInvSpacing;
 
     for (int i = 0; i < numParticles; i++) {
-      float s = 0.01;
+      float s_ = 0.01;
 
-      particleColor[3 * i] = std::clamp<float>(particleColor[3 * i] - s, 0.0, 1.0f);
-      particleColor[3 * i + 1] = std::clamp<float>(particleColor[3 * i + 1] - s, 0.0, 1.0f);
-      particleColor[3 * i + 1] = std::clamp<float>(particleColor[3 * i + 2] + s, 0.0, 1.0f);
+      particleColor[3 * i] = std::clamp<float>(particleColor[3 * i] - s_, 0.0, 1.0f);
+      particleColor[3 * i + 1] = std::clamp<float>(particleColor[3 * i + 1] - s_, 0.0, 1.0f);
+      particleColor[3 * i + 1] = std::clamp<float>(particleColor[3 * i + 2] + s_, 0.0, 1.0f);
 
       float x = particlePos[2 * i];
       float y = particlePos[2 * i + 1];
@@ -471,9 +472,9 @@ public:
       if (d0 > 0.0) {
         float relDensity = particleDensity[cellNr] / d0;
         if (relDensity < 0.7) {
-          float s = 0.8;
-          particleColor[3 * i] = s;
-          particleColor[3 * i + 1] = s;
+          s_ = 0.8;
+          particleColor[3 * i] = s_;
+          particleColor[3 * i + 1] = s_;
           particleColor[3 * i + 2] = 1.0f;
         }
       }
@@ -486,28 +487,28 @@ public:
     val = d == 0.0f ? 0.5f : (val - minVal) / d;
     float m = 0.25f;
     int num = std::floor(val / m);
-    float s = (val - num * m) / m;
+    float s_ = (val - num * m) / m;
     float r = 0.0f, g = 0.0f, b = 0.0f;
 
     switch (num) {
     case 0:
       r = 0.0f;
-      g = s;
+      g = s_;
       b = 1.0f;
       break;
     case 1:
       r = 0.0f;
       g = 1.0f;
-      b = 1.0f - s;
+      b = 1.0f - s_;
       break;
     case 2:
-      r = s;
+      r = s_;
       g = 1.0f;
       b = 0.0f;
       break;
     case 3:
       r = 1.0f;
-      g = 1.0f - s;
+      g = 1.0f - s_;
       b = 0.0f;
       break;
     }

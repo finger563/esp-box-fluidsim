@@ -124,7 +124,7 @@ extern "C" void app_main(void) {
                            // get imu data
                            auto accel = imu->get_accelerometer(ec);
                            auto gyro = imu->get_gyroscope(ec);
-                           auto temp = imu->get_temperature(ec);
+                           // auto temp = imu->get_temperature(ec);
 
                            // with only the accelerometer + gyroscope, we can't get yaw :(
                            float roll = 0, pitch = 0, yaw = 0; // NOTE:yaw is unused
@@ -140,11 +140,14 @@ extern "C" void app_main(void) {
                            roll *= M_PI / 180.0f;
 
                            // compute the gravity vector and store it
+                           float gx = sin(pitch);
+                           float gy = -cos(pitch) * sin(roll);
+                           float gz = -cos(pitch) * cos(roll);
                            {
                              std::lock_guard<std::mutex> lock(gravity_mutex);
-                             gravity[0] = sin(pitch);
-                             gravity[1] = -cos(pitch) * sin(roll);
-                             gravity[2] = -cos(pitch) * cos(roll);
+                             gravity[0] = gx;
+                             gravity[1] = gy;
+                             gravity[2] = gz;
                            }
 
                            return false;
@@ -324,9 +327,9 @@ extern "C" void app_main(void) {
 
            uint16_t color = lv_color_to_u16(lv_color_make(red, green, blue));
 
-           for (int j = y0; j <= y1; j++) {
-             for (int i = x0; i <= x1; i++) {
-               framebuffer[j * lcd_width + i] = color;
+           for (int fby = y0; fby <= y1; fby++) {
+             for (int fbx = x0; fbx <= x1; fbx++) {
+               framebuffer[fby * lcd_width + fbx] = color;
              }
            }
          }
