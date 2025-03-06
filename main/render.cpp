@@ -52,34 +52,6 @@ void render_rectangle(int cx, int cy, int width, int height, uint16_t color,
   }
 }
 
-void render_rectancle(int x, int y, int width, int height, uint16_t color, bool filled, bool border,
-                      uint16_t border_color, uint16_t *framebuffer) {
-  if (width <= 0 || height <= 0) {
-    return;
-  }
-  int xs = std::clamp(x, 0, display_width - 1);
-  int ys = std::clamp(y, 0, display_height - 1);
-  int xe = std::clamp(x + width, 0, display_width - 1);
-  int ye = std::clamp(y + height, 0, display_height - 1);
-  if (filled) {
-    for (int x = xs; x < xe; x++) {
-      for (int y = ys; y < ye; y++) {
-        framebuffer[y * display_width + x] = color;
-      }
-    }
-  } else {
-    for (int y = ys; y < ye; y++) {
-      for (int x = xs; x < xe; x++) {
-        if (border && (y == ys || y == ye || x == xs || x == xe)) {
-          framebuffer[y * display_width + x] = border_color;
-        } else {
-          framebuffer[y * display_width + x] = color;
-        }
-      }
-    }
-  }
-}
-
 void render_circle(int x, int y, int radius, uint16_t color, uint16_t *framebuffer) {
   if (radius <= 0) {
     return;
