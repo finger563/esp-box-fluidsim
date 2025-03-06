@@ -4,17 +4,18 @@ Example repository using espp components to have an interactive fluid simulation
 on the ESP32-S3-BOX and ESP32-S3-BOX-3, using the IMU to measure the gravity
 vector and using the touchscreen for other fluid interactions.
 
-## Development
+https://github.com/user-attachments/assets/d6483866-30f6-4c09-b3e8-c47c18a84001
 
-This repository is designed to be used as a template repository - so you can
-sepcify this as the template repository type when creating a new repository on
-GitHub.
+![image](https://github.com/user-attachments/assets/19921856-58a1-4680-b37f-32216320a8ce)
 
-After setting this as the template, make sure to update the following:
-- The [./main/main.cpp](./main/main.cpp) To run the main code for your app. The
-  [main folder](./main) is also where you can put additional header and source
-  files that you don't think belong in their own components but help keep the
-  main code clean.
+https://github.com/user-attachments/assets/37ce65c0-ff92-4d34-8756-d0fdd518413c
+
+This repository implements an embedded c++ (header-only) version of [Ten Minute
+Physics' FLIP Fluid
+Simulation](https://matthias-research.github.io/pages/tenMinutePhysics/index.html).
+
+This project was inspired by
+https://hackaday.io/project/202470-esp32-fluid-simulation-on-16x16-led-matrix.
 
 ## Cloning
 
@@ -22,7 +23,7 @@ Since this repo contains a submodule, you need to make sure you clone it
 recursively, e.g. with:
 
 ``` sh
-git clone --recurse-submodules <your repo name>
+git clone --recurse-submodules https://github.com/finger563/esp-box-fluidsim
 ```
 
 Alternatively, you can always ensure the submodules are up to date after cloning
@@ -48,9 +49,16 @@ See the Getting Started Guide for full steps to configure and use ESP-IDF to bui
 
 ## Output
 
-Example screenshot of the console output from this app:
+![image](https://github.com/user-attachments/assets/26bc0268-bc53-4949-91d0-7f540449c2ac)
+![image](https://github.com/user-attachments/assets/19921856-58a1-4680-b37f-32216320a8ce)
+![image](https://github.com/user-attachments/assets/3f373d48-71a2-4acc-9d72-eb133fbd9ee0)
 
-![CleanShot 2023-07-12 at 14 01 21](https://github.com/esp-cpp/template/assets/213467/7f8abeae-121b-4679-86d8-7214a76f1b75)
+https://github.com/user-attachments/assets/4c19dea8-bcb9-4b38-93b3-ad01f3c6f904
+
+https://github.com/user-attachments/assets/d6483866-30f6-4c09-b3e8-c47c18a84001
+
+https://github.com/user-attachments/assets/37ce65c0-ff92-4d34-8756-d0fdd518413c
+
 
 ## Developing
 

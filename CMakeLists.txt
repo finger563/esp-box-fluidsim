@@ -9,7 +9,7 @@ set(EXTRA_COMPONENT_DIRS
 
 set(
   COMPONENTS
-  "main esptool_py esp-box filters timer"
+  "main esptool_py esp-box filters timer fluidsim"
   CACHE STRING
   "List of components to include"
   )
