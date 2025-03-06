@@ -143,12 +143,10 @@ extern "C" void app_main(void) {
                            float gx = sin(pitch);
                            float gy = -cos(pitch) * sin(roll);
                            float gz = -cos(pitch) * cos(roll);
-                           {
-                             std::lock_guard<std::mutex> lock(gravity_mutex);
-                             gravity[0] = gx;
-                             gravity[1] = gy;
-                             gravity[2] = gz;
-                           }
+                           std::lock_guard<std::mutex> lock(gravity_mutex);
+                           gravity[0] = gx;
+                           gravity[1] = gy;
+                           gravity[2] = gz;
 
                            return false;
                          },
