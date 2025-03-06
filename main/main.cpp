@@ -198,7 +198,7 @@ extern "C" void app_main(void) {
 
   static constexpr int lcd_width = box.lcd_width();
   static constexpr int lcd_height = box.lcd_height();
-  static constexpr int framebuffer_size = box.lcd_width() * box.lcd_height() * sizeof(uint16_t);
+  static constexpr int framebuffer_size = lcd_width * lcd_height * sizeof(uint16_t);
 
   // create particles
   fluid->numParticles = numX * numY;
@@ -269,12 +269,13 @@ extern "C" void app_main(void) {
          fluid->set_obstacle(obstacle_pos.x(), obstacle_pos.y(), obstacle_radius, false, dt);
 
          // update the fluid sim
-         fluid->simulate(
-             4 * dt,
-             -g * gravity_vector[0], // NOTE: we invert the x to match the simulation coords
-             g * gravity_vector[1], flip_ratio, num_pressure_iters, num_particle_iters,
-             over_relaxation, compensate_drift, separate_particles, obstacle_pos.x(),
-             obstacle_pos.y(), obstacle_radius);
+         fluid->simulate(4 * dt, // NOTE: run faster than real time not because the sim is
+                                 // slow, but because it looks more realistic
+                         -g * gravity_vector[0], // NOTE: we invert the x to match the
+                                                 // simulation coords
+                         g * gravity_vector[1], flip_ratio, num_pressure_iters, num_particle_iters,
+                         over_relaxation, compensate_drift, separate_particles, obstacle_pos.x(),
+                         obstacle_pos.y(), obstacle_radius);
 
          // ping pong between the two full frame buffers
          static int current_buffer = 0;
@@ -292,23 +293,14 @@ extern "C" void app_main(void) {
 
          // draw the obstacle as a circle
          {
-           float render_pos_x = obstacle_pos.x() * spacing;
-           float render_pos_y = lcd_height - obstacle_pos.y() * spacing;
-           int x0 = std::max(0, std::min(lcd_width - 1, (int)(render_pos_x - obstacle_radius)));
-           int x1 = std::max(0, std::min(lcd_width - 1, (int)(render_pos_x + obstacle_radius)));
-           int y0 = std::max(0, std::min(lcd_height - 1, (int)(render_pos_y - obstacle_radius)));
-           int y1 = std::max(0, std::min(lcd_height - 1, (int)(render_pos_y + obstacle_radius)));
-
+           float x = obstacle_pos.x() * spacing;
+           float y = lcd_height - obstacle_pos.y() * spacing;
            uint16_t color = lv_color_to_u16(lv_color_make(255, 255, 255));
-
-           for (int j = y0; j <= y1; j++) {
-             for (int i = x0; i <= x1; i++) {
-               framebuffer[j * lcd_width + i] = color;
-             }
-           }
+           render_circle(x, y, obstacle_radius * spacing, color, framebuffer);
          }
 
          // render to the active frame buffer
+         float particle_render_radius = particle_radius * spacing;
          for (int i = 0; i < fluid->numParticles; i++) {
            float x = fluid->particlePos[2 * i] * spacing;
            float y = lcd_height - fluid->particlePos[2 * i + 1] * spacing;
@@ -316,20 +308,11 @@ extern "C" void app_main(void) {
            uint8_t red = fluid->particleColor[3 * i] * 255;
            uint8_t green = fluid->particleColor[3 * i + 1] * 255;
            uint8_t blue = fluid->particleColor[3 * i + 2] * 255;
-
-           // for now simply draw a box where the particle is
-           int x0 = std::max(0, std::min(lcd_width - 1, (int)(x - particle_radius)));
-           int x1 = std::max(0, std::min(lcd_width - 1, (int)(x + particle_radius)));
-           int y0 = std::max(0, std::min(lcd_height - 1, (int)(y - particle_radius)));
-           int y1 = std::max(0, std::min(lcd_height - 1, (int)(y + particle_radius)));
-
            uint16_t color = lv_color_to_u16(lv_color_make(red, green, blue));
 
-           for (int fby = y0; fby <= y1; fby++) {
-             for (int fbx = x0; fbx <= x1; fbx++) {
-               framebuffer[fby * lcd_width + fbx] = color;
-             }
-           }
+           render_circle(x, y, particle_render_radius, color, framebuffer);
+           // render_rectangle(x, y, particle_render_radius, particle_render_radius, color,
+           // framebuffer);
          }
 
          // then push the frame to the render task using push_frame
