@@ -246,12 +246,11 @@ extern "C" void app_main(void) {
            gravity_vector = gravity;
          }
 
-         // fmt::print("dt: {}\n", dt);
-
          static auto prev_time = esp_timer_get_time();
          auto time = esp_timer_get_time();
          float dt = (time - prev_time) / 1'000'000.0f; // convert us to s
          prev_time = time;
+         // fmt::print("dt: {:.3f}\n", dt);
 
          // get the obstacle position (where the user is touching)
          espp::Vector2f obstacle_pos{};
@@ -270,7 +269,7 @@ extern "C" void app_main(void) {
 
          // update the fluid sim
          fluid->simulate(
-             2 * dt,
+             4 * dt,
              -g * gravity_vector[0], // NOTE: we invert the x to match the simulation coords
              g * gravity_vector[1], flip_ratio, num_pressure_iters, num_particle_iters,
              over_relaxation, compensate_drift, separate_particles, obstacle_pos.x(),
