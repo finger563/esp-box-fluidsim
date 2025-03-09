@@ -143,6 +143,17 @@ extern "C" void app_main(void) {
                            float gx = sin(pitch);
                            float gy = -cos(pitch) * sin(roll);
                            float gz = -cos(pitch) * cos(roll);
+
+                           // if we're on the box (not the box-3) then the xy
+                           // axes are rotated clockwise 90 degrees; we need to
+                           // adjust for that
+                           auto box_type = box.box_type();
+                           if (box_type == espp::EspBox::BoxType::BOX) {
+                             float tmp = -gx;
+                             gx = gy;
+                             gy = tmp;
+                           }
+
                            std::lock_guard<std::mutex> lock(gravity_mutex);
                            gravity[0] = gx;
                            gravity[1] = gy;
