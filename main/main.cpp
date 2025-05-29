@@ -62,21 +62,11 @@ extern "C" void app_main(void) {
   }
   // set the pixel buffer to be 50 lines high
   static constexpr size_t pixel_buffer_size = box.lcd_width() * 50;
-  espp::Task::BaseConfig display_task_config = {
-      .name = "Display",
-      .stack_size_bytes = 6 * 1024,
-      .priority = 10,
-      .core_id = 0,
-  };
   // initialize the LVGL display for the esp-box
-  if (!box.initialize_display(pixel_buffer_size, display_task_config)) {
+  if (!box.initialize_display(pixel_buffer_size)) {
     logger.error("Failed to initialize display!");
     return;
   }
-  // NOTE: we pause the display here so that the lvgl display task does not run.
-  // We will manually draw to the screen and bypass lvgl for this demo.
-  auto display = box.display();
-  display->pause();
 
   // start the render task
   if (!initialize_render()) {
@@ -90,8 +80,27 @@ extern "C" void app_main(void) {
     return;
   }
 
+  using Imu = espp::EspBox::Imu;
+  // with only the accelerometer + gyroscope, we can't get yaw :(
+  static constexpr float beta = 0.1f; // higher = more accelerometer, lower = more gyro
+  static espp::MadgwickFilter f(beta);
+  auto madgwick_filter_fn = [](float dt, const Imu::Value &accel,
+                               const Imu::Value &gyro) -> Imu::Value {
+    // Apply Madgwick filter
+    f.update(dt, accel.x, accel.y, accel.z, espp::deg_to_rad(gyro.x), espp::deg_to_rad(gyro.y),
+             espp::deg_to_rad(gyro.z));
+    float roll, pitch, yaw;
+    f.get_euler(roll, pitch, yaw);
+    // return the computed orientation
+    Imu::Value orientation{};
+    orientation.pitch = espp::deg_to_rad(pitch);
+    orientation.roll = espp::deg_to_rad(roll);
+    orientation.yaw = espp::deg_to_rad(yaw);
+    return orientation;
+  };
+
   // initialize the IMU
-  if (!box.initialize_imu()) {
+  if (!box.initialize_imu(madgwick_filter_fn)) {
     logger.error("Failed to initialize IMU!");
     return;
   }
@@ -110,7 +119,7 @@ extern "C" void app_main(void) {
   // make a task to read out the IMU data and print it to console
   using namespace std::chrono_literals;
   espp::Timer imu_timer({.period = 10ms,
-                         .callback = [&gravity, &gravity_mutex]() -> bool {
+                         .callback = [&logger, &gravity, &gravity_mutex]() -> bool {
                            static auto &box = espp::EspBox::get();
                            static auto imu = box.imu();
 
@@ -122,42 +131,34 @@ extern "C" void app_main(void) {
 
                            std::error_code ec;
                            // get imu data
-                           auto accel = imu->get_accelerometer(ec);
-                           auto gyro = imu->get_gyroscope(ec);
-                           // auto temp = imu->get_temperature(ec);
-
-                           // with only the accelerometer + gyroscope, we can't get yaw :(
-                           float roll = 0, pitch = 0, yaw = 0; // NOTE:yaw is unused
-                           static constexpr float beta =
-                               0.1f; // higher = more accelerometer, lower = more gyro
-                           static espp::MadgwickFilter f(beta);
-
-                           // update the state
-                           f.update(dt, accel.x, accel.y, accel.z, gyro.x * M_PI / 180.0f,
-                                    gyro.y * M_PI / 180.0f, gyro.z * M_PI / 180.0f);
-                           f.get_euler(roll, pitch, yaw);
-                           pitch *= M_PI / 180.0f;
-                           roll *= M_PI / 180.0f;
-
-                           // compute the gravity vector and store it
-                           float gx = sin(pitch);
-                           float gy = -cos(pitch) * sin(roll);
-                           float gz = -cos(pitch) * cos(roll);
-
+                           if (!imu->update(dt, ec)) {
+                             logger.error("Failed to update IMU: {}", ec.message());
+                             return false;
+                           }
+                           auto accel = imu->get_accelerometer();
+                           auto gyro = imu->get_gyroscope();
+                           auto temp = imu->get_temperature();
+                           auto orientation = imu->get_orientation();
+                           auto gravity_vector = imu->get_gravity_vector();
                            // if we're on the box (not the box-3) then the xy
                            // axes are rotated clockwise 90 degrees; we need to
                            // adjust for that
                            auto box_type = box.box_type();
                            if (box_type == espp::EspBox::BoxType::BOX) {
-                             float tmp = -gx;
-                             gx = gy;
-                             gy = tmp;
+                             // invert the x value
+                             gravity_vector.x = -gravity_vector.x;
+                             // swap x and y axes
+                             std::swap(gravity_vector.x, gravity_vector.y);
                            }
 
+                           logger.debug("IMU Data: {{ accel: {}, gyro: {}, temp: {:.2f}, "
+                                        "orientation: {}, gravity: {} }}",
+                                        accel, gyro, temp, orientation, gravity_vector);
+
                            std::lock_guard<std::mutex> lock(gravity_mutex);
-                           gravity[0] = gx;
-                           gravity[1] = gy;
-                           gravity[2] = gz;
+                           gravity[0] = gravity_vector.x;
+                           gravity[1] = gravity_vector.y;
+                           gravity[2] = gravity_vector.z;
 
                            return false;
                          },
